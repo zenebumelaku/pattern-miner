@@ -1,3 +1,5 @@
+"""Regression tests for the optimizer compatibility entry point and modules."""
+
 import io
 import json
 import os
@@ -13,7 +15,6 @@ from pathlib import Path
 from prototype import (
     Config,
     analyze_dataset,
-    experiment_main,
     load_project_env,
     llm_candidates,
     make_script,
@@ -26,10 +27,12 @@ from prototype import (
 )
 
 
+# Shared repository and fixture paths.
 REPO = Path(__file__).resolve().parents[1]
 DATASET = REPO / "experiments" / "data" / "very-small-ugly.metta"
 
 
+# Parser, profiling, and configuration validation tests.
 class PrototypeTests(unittest.TestCase):
     def test_pattern_set_parser_extracts_unique_support_patterns(self):
         output = """
@@ -61,6 +64,7 @@ class PrototypeTests(unittest.TestCase):
         self.assertEqual(supports, [4.0, 2.0])
         self.assertEqual(surprises, [])
 
+    # Environment and LLM provider behavior.
     def test_llm_fallback_is_deterministic_and_offline(self):
         profile = analyze_dataset(DATASET)
         with patch.dict(os.environ, {}, clear=True):
@@ -180,6 +184,7 @@ class PrototypeTests(unittest.TestCase):
         self.assertNotIn("gemini-secret-test-key", metadata["error"])
         self.assertFalse(metadata["real_llm"])
 
+    # PeTTa script generation, execution, timeout, and selection tests.
     def test_generated_script_uses_actual_nine_argument_signature(self):
         script = make_script(REPO, DATASET, Config(3, 1, conj_exp=True))
         try:
@@ -221,6 +226,7 @@ class PrototypeTests(unittest.TestCase):
             self.assertIsInstance(result.stderr, str)
             json.dumps(result.__dict__)
 
+    # End-to-end CLI report generation.
     def test_cli_writes_report(self):
         with tempfile.TemporaryDirectory() as directory:
             fake = Path(directory) / "fake-petta.sh"

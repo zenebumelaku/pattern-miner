@@ -325,7 +325,13 @@ The suite covers configuration validation, output parsing, pattern-set parsing, 
 
 ```text
 optimizer/
-├── prototype.py        Optimizer CLI and experiment harness
+├── prototype.py        Backward-compatible CLI entry point
+├── cli.py              Normal and experiment CLI workflows
+├── miner.py            Dataset analysis, script generation, and PeTTa runs
+├── llm.py              LLM configuration proposals and fallback logic
+├── search.py           Candidate generation and result selection
+├── models.py           Shared configuration and result data models
+├── env.py              Project .env loading
 ├── test_prototype.py   Unit and CLI tests
 ├── README.md           Assignment and usage documentation
 └── *.json              Configuration and report examples
