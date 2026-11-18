@@ -14,6 +14,8 @@ from pathlib import Path
 
 from prototype import (
     Config,
+    DatasetProfile,
+    RunResult,
     analyze_dataset,
     load_project_env,
     llm_candidates,
@@ -21,6 +23,7 @@ from prototype import (
     llm_api_key,
     parse_pattern_set,
     parse_results,
+    random_candidates,
     run_miner,
     select_best,
     validate_config,
@@ -47,12 +50,36 @@ class PrototypeTests(unittest.TestCase):
             "(Inheritance $x ugly)",
         ])
 
+    def test_result_parsers_support_surprisingness_atoms_and_signed_values(self):
+        output = """
+        OPTIMIZER_RESULTS_BEGIN
+        (surprisingnessOf (Inheritance $x human) -0.25)
+        (surprisingnessOf (, (Inheritance $x man) (Inheritance $x human)) 1.2e-16)
+        OPTIMIZER_RESULTS_END
+        """
+        count, supports, surprises = parse_results(output, result_section_only=True)
+        self.assertEqual(count, 2)
+        self.assertEqual(supports, [])
+        self.assertEqual(surprises, [-0.25, 1.2e-16])
+        self.assertEqual(parse_pattern_set(output), [
+            "(, (Inheritance $x man) (Inheritance $x human))",
+            "(Inheritance $x human)",
+        ])
+
     def test_dataset_analysis_and_validation(self):
         profile = analyze_dataset(DATASET)
         self.assertEqual(profile.atom_lines, 9)
         self.assertEqual(profile.predicates, {"Inheritance": 9})
         self.assertEqual(validate_config(Config(3, 0), profile), [])
         self.assertIn("depth greater than zero", validate_config(Config(3, 1, conj_exp=False), profile)[0])
+
+    def test_random_candidates_are_bounded_for_tiny_datasets(self):
+        profile = DatasetProfile("tiny.metta", 1, 0, {}, 0, 0)
+        configs = random_candidates(profile, 4, seed=7)
+        self.assertEqual({(config.min_support, config.depth) for config in configs}, {
+            (1, 0),
+            (1, 1),
+        })
 
     def test_result_parser_preserves_symbolic_metrics(self):
         output = """
@@ -129,17 +156,35 @@ class PrototypeTests(unittest.TestCase):
             }],
             "usageMetadata": {"promptTokenCount": 17, "candidatesTokenCount": 9},
         }).encode())
+        previous = RunResult(
+            config={"min_support": 1, "depth": 0},
+            status="ok",
+            elapsed_seconds=1.2,
+            peak_memory_mb=3.4,
+            pattern_count=1,
+            support_values=[9.0],
+            surprisingness_values=[0.5],
+            stdout="private miner output",
+            stderr="private miner error",
+            patterns=["private pattern"],
+        )
         with patch.dict(os.environ, {
             "GEMINI_API_KEY": "gemini-test-key",
             "GEMINI_MODEL": "models/gemini-2.5-flash",
         }, clear=True), patch("prototype.urllib.request.urlopen", return_value=response) as urlopen:
-            configs, metadata = llm_candidates(analyze_dataset(DATASET), [], 1)
+            configs, metadata = llm_candidates(analyze_dataset(DATASET), [previous], 1)
 
         request = urlopen.call_args.args[0]
         self.assertEqual(urlopen.call_args.kwargs["timeout"], 180)
         request_body = json.loads(request.data)
         self.assertEqual(request_body["generationConfig"]["maxOutputTokens"], 512)
         self.assertIn("responseSchema", request_body["generationConfig"])
+        request_text = request.data.decode("utf-8")
+        self.assertNotIn("support_values", request_text)
+        self.assertNotIn("surprisingness_values", request_text)
+        self.assertNotIn("private pattern", request_text)
+        self.assertNotIn("private miner output", request_text)
+        self.assertNotIn("private miner error", request_text)
         self.assertEqual(
             request.full_url,
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",

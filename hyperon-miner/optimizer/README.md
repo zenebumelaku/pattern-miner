@@ -31,10 +31,10 @@ Find whether LLM warm start can find a low-runtime, valid miner configuration wi
 ## What This Prototype Does
 
 - Profiles an input `.metta` dataset.
-- Validates the nine-argument miner configuration.
+- Validates the nine-argument `pattern-miner` call.
 - Executes the existing Hyperon/PeTTa implementation unchanged.
 - Measures elapsed runtime and process memory delta.
-- Parses support values and symbolic pattern identities.
+- Parses `supportOf` and `surprisingnessOf` values and symbolic pattern identities.
 - Compares candidate pattern sets against a reference pattern set.
 - Reports default, random, Optuna, deterministic, and LLM warm-start methods.
 - Uses a live LLM proposal path for warm-start experiments; deterministic search is a separate reproducible baseline.
@@ -68,7 +68,10 @@ flowchart LR
 
 ### LLM Boundary
 
-The proposal service receives dataset summary statistics and previous run metadata only.
+The proposal service receives dataset summary statistics and, when supplied,
+previous-run metadata (configuration, status, runtime, memory, and error state)
+only. In the recorded experiment, the LLM warm-start method generated the
+initial candidate set and did not receive prior miner runs.
 
 It must return JSON parameter sets such as:
 
@@ -88,7 +91,9 @@ It must return JSON parameter sets such as:
 }
 ```
 
-The LLM never receives or invents pattern identities, support values, or mining results.
+The LLM never receives or invents pattern identities, support values, raw miner
+output, or other mining results. PeTTa remains the only source of symbolic
+results.
 
 ### Failure Handling
 
@@ -159,13 +164,13 @@ The raw symbolic output contained:
 - The deterministic baseline recovered all 18 reference patterns in each seed and ran faster than every LLM-selected run.
 - This one-dataset, one-trial-per-seed run does not establish a performance benefit for the LLM.
 
-Full evidence is available in [`results/`](../results/):
+Full evidence is available in [`results/`](./results/):
 
-- [Problem sweep](../results/problem_sweep.md)
-- [Testable hypothesis](../results/hypothesis.md)
-- [Baseline comparison](../results/comparison.md)
-- [Architecture](../results/architecture.md)
-- [Presentation slides](../results/slides.md)
+- [Problem sweep](./results/problem_sweep.md)
+- [Testable hypothesis](./results/hypothesis.md)
+- [Baseline comparison](./results/comparison.md)
+- [Architecture](./results/architecture.md)
+- [Presentation slides](./results/slides.md)
 
 ---
 
@@ -176,7 +181,15 @@ Full evidence is available in [`results/`](../results/):
 - Python 3.11
 - PeTTa
 - SWI-Prolog available on `PATH`
-- Optuna for Optuna experiments
+- Optuna is optional; if it is not installed, the Optuna method uses the deterministic fallback.
+
+Create the Python environment used by PeTTa’s Janus integration, then install
+the repository requirements:
+
+```bash
+python3.11 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+```
 
 On macOS, expose the installed SWI-Prolog executable before running experiments:
 
@@ -249,7 +262,9 @@ export OPENAI_MODEL="gpt-4o-mini"
 export OPENAI_BASE_URL="https://api.openai.com/v1/chat/completions"
 ```
 
-Run the experiment without fallback enabled. Provider usage and errors are recorded in the experiment report; a provider failure stops a live experiment.
+In strict live mode, a provider failure stops the run. With
+`--allow-llm-fallback`, provider failures are recorded as fallback metadata and
+the generated configurations are excluded from live evidence.
 
 ### Gemini Provider
 
@@ -335,7 +350,7 @@ optimizer/
 ├── README.md           Assignment and usage documentation
 └── *.json              Configuration and report examples
 
-results/
+optimizer/results/
 ├── problem_sweep.md
 ├── hypothesis.md
 ├── comparison.md

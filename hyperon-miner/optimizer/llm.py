@@ -44,8 +44,9 @@ def llm_api_key() -> tuple[str | None, str]:
     return None, provider
 
 
-# Ask the provider for configurations. Live experiments can require a real
-# provider response; offline callers may explicitly opt into the fallback.
+# Ask the provider for configurations. The CLI requires a real provider response
+# by default; direct callers can leave ``require_live`` false for offline tests
+# or explicitly local fallback workflows.
 def llm_candidates(
     profile: DatasetProfile,
     previous: list[RunResult],
@@ -66,7 +67,18 @@ def llm_candidates(
         }
     prompt = {
         "dataset": asdict(profile),
-        "previous_runs": [asdict(run) | {"stdout": "", "stderr": ""} for run in previous],
+        # Keep the provider on configuration/run metadata only. In particular,
+        # do not send parsed supports, pattern identities, or raw miner output.
+        "previous_runs": [
+            {
+                "config": run.config,
+                "status": run.status,
+                "elapsed_seconds": run.elapsed_seconds,
+                "peak_memory_mb": run.peak_memory_mb,
+                "has_error": run.error is not None,
+            }
+            for run in previous
+        ],
         "schema": {"configurations": [{"min_support": 1, "depth": 0,
                                         "mode": "none", "normalization": "none",
                                         "db_ratio": "none", "conj_exp": True,

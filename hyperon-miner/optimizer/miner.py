@@ -41,6 +41,7 @@ MINIMAL_FREQUENT_IMPORTS = (
 # Markers used to isolate machine-readable PeTTa results.
 RESULT_BEGIN = "OPTIMIZER_RESULTS_BEGIN"
 RESULT_END = "OPTIMIZER_RESULTS_END"
+RESULT_NUMBER = r"-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
 
 
 # Dataset profiling.
@@ -146,12 +147,15 @@ def parse_results(output: str, result_section_only: bool = False) -> tuple[int, 
         # PeTTa may flush get-atoms results after the end marker. The begin
         # marker is the reliable boundary after all translated source output.
         output = output.split(RESULT_BEGIN, 1)[1]
-    support = [float(x) for x in re.findall(r"supportOf[\s\S]*?\s([0-9]+(?:\.[0-9]+)?)\)?", output)]
+    support = [float(x) for x in re.findall(
+        rf"\(supportOf\s+[\s\S]*?\s({RESULT_NUMBER})\)", output,
+    )]
     surprise = [float(x) for x in re.findall(
-        r"surprisingnessOf[\s\S]*?\s([0-9]+(?:\.[0-9]+)?(?:[eE][+-]?\d+)?)\)?", output)]
-    # Count result atoms, not debug messages. Support and surprisingness outputs
-    # are mutually exclusive in the repository's documented result format.
-    count = len(support) if support else len(surprise)
+        rf"\(surprisingnessOf\s+[\s\S]*?\s({RESULT_NUMBER})\)", output,
+    )]
+    # Count result atoms, not debug messages. A result section can contain
+    # either supportOf or surprisingnessOf atoms, and fixtures may contain both.
+    count = len(support) + len(surprise)
     return count, support, surprise
 
 
@@ -160,7 +164,7 @@ def parse_pattern_set(output: str) -> list[str]:
         output = output.split(RESULT_BEGIN, 1)[1]
     patterns: list[str] = []
     for match in re.finditer(
-        r"\(supportOf\s+(.+?)\s+[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?\d+)?\)",
+        rf"\((?:supportOf|surprisingnessOf)\s+(.+?)\s+{RESULT_NUMBER}\)",
         output,
         re.DOTALL,
     ):
@@ -211,6 +215,9 @@ def run_miner(repo: Path, petta: str, dataset: Path, config: Config,
 # Deterministic baseline candidate generation. This is intentionally separate
 # from the live LLM proposal path and is useful for reproducible comparisons.
 def deterministic_candidates(profile: DatasetProfile, limit: int) -> list[Config]:
+    if limit <= 0:
+        return []
+
     upper = max(1, profile.atom_lines)
     supports = sorted({1, max(1, upper // 20), max(1, upper // 10), max(1, upper // 4)})
     configs = [Config(s, depth, conj_exp=(depth > 0))

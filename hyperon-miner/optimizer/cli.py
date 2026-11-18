@@ -83,6 +83,9 @@ def experiment_main(argv: list[str]) -> int:
                 configs = deterministic_candidates(profile, args.trials)
                 llm_metadata = {"provider": "deterministic-baseline", "fallback_count": 0}
             else:
+                # The LLM supplies the initial candidate set for this method;
+                # the current experiment protocol does not feed prior miner
+                # results back into the proposal request.
                 configs, llm_metadata = llm_candidates(
                     profile,
                     [],
@@ -194,6 +197,7 @@ def main() -> int:
     report = {"dataset": asdict(profile), "llm": llm, "results": [asdict(r) for r in results],
               "best": asdict(best) if best else None,
               "selection": {"max_seconds": args.max_seconds, "min_patterns": args.min_patterns}}
+    args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps({"output": str(args.output), "best": best.config if best else None,
                       "statuses": [r.status for r in results]}, indent=2))

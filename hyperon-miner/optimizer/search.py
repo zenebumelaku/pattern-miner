@@ -24,24 +24,29 @@ def select_best(results: list[RunResult], max_seconds: float | None, min_pattern
 
 # Generate seeded random configurations.
 def random_candidates(profile: DatasetProfile, limit: int, seed: int) -> list[Config]:
-    rng = random.Random(seed)
+    if limit <= 0:
+        return []
+
     upper = max(1, profile.atom_lines)
-    candidates: list[Config] = []
-    seen: set[tuple[int, int]] = set()
-    while len(candidates) < limit:
-        support = rng.randint(1, upper)
-        depth = rng.randint(0, 1)
-        key = (support, depth)
-        if key not in seen:
-            seen.add(key)
-            candidates.append(Config(support, depth, conj_exp=(depth > 0)))
-    return candidates
+    # There are only ``2 * upper`` unique support/depth pairs. Sampling from
+    # that finite space avoids the infinite loop that the old rejection
+    # sampler entered when a tiny dataset had fewer pairs than ``limit``.
+    rng = random.Random(seed)
+    pair_count = 2 * upper
+    pair_indexes = rng.sample(range(pair_count), min(limit, pair_count))
+    return [
+        Config(index // 2 + 1, index % 2, conj_exp=(index % 2 == 1))
+        for index in pair_indexes
+    ]
 
 
 # Use Optuna when installed, otherwise use the deterministic fallback.
 def optuna_candidates(profile: DatasetProfile, limit: int, seed: int,
                       repo: Path, petta: str, dataset: Path, timeout: int,
                       petta_venv: Path | None) -> tuple[list[Config], dict[str, Any]]:
+    if limit <= 0:
+        return [], {"provider": "none", "fallback_count": 0}
+
     try:
         import optuna
     except ImportError:

@@ -55,8 +55,8 @@ We have provided a starter script `run_miner.metta` in the root directory.
 2.  **Adjust Parameters** (optional):
     You can change the minimum support (frequency) or pattern depth in the miner call:
     ```metta
-    ;; (pattern-miner output input min-support depth mode normalization db-ratio conj-exp)
-    !(pattern-miner &res &db 3 0 none none none True)
+    ;; (pattern-miner output-space input-space init-pattern min-support depth mode normalization db-ratio conj-exp)
+    !(pattern-miner &res &db $x 3 0 none none none True)
     ```
 
 
