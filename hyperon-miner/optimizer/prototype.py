@@ -44,6 +44,34 @@ MINIMAL_FREQUENT_IMPORTS = (
 )
 RESULT_BEGIN = "OPTIMIZER_RESULTS_BEGIN"
 RESULT_END = "OPTIMIZER_RESULTS_END"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ENV_FILE = PROJECT_ROOT / ".env"
+SUPPORTED_LLM_PROVIDERS = {"gemini", "openai", "auto"}
+
+
+def load_project_env(path: Path = PROJECT_ENV_FILE) -> None:
+    """Load simple KEY=VALUE settings without overriding the shell environment."""
+    if not path.is_file():
+        return
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        if "=" not in line:
+            continue
+        name, value = line.split("=", 1)
+        name = name.strip()
+        value = value.strip()
+        if not name or name in os.environ:
+            continue
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        os.environ[name] = value
+
+
+load_project_env()
 
 
 @dataclass(frozen=True)
@@ -251,20 +279,35 @@ def deterministic_candidates(profile: DatasetProfile, limit: int) -> list[Config
     return configs[:limit]
 
 
+def configured_llm_provider() -> str:
+    provider = os.environ.get("LLM_PROVIDER", "gemini").strip().lower()
+    if provider not in SUPPORTED_LLM_PROVIDERS:
+        supported = ", ".join(sorted(SUPPORTED_LLM_PROVIDERS))
+        raise ValueError(f"LLM_PROVIDER must be one of: {supported}")
+    return provider
+
+
 def llm_api_key() -> tuple[str | None, str]:
-    gemini_key = os.environ.get("GEMINI_API_KEY")
-    if gemini_key:
-        return gemini_key, "gemini"
-    openai_key = os.environ.get("OPENAI_API_KEY")
-    if openai_key:
-        return openai_key, "openai"
-    return None, "none"
+    provider = configured_llm_provider()
+    if provider in {"gemini", "auto"}:
+        gemini_key = os.environ.get("GEMINI_API_KEY")
+        if gemini_key:
+            return gemini_key, "gemini"
+    if provider in {"openai", "auto"}:
+        openai_key = os.environ.get("OPENAI_API_KEY")
+        if openai_key:
+            return openai_key, "openai"
+    return None, provider
 
 
 def llm_candidates(profile: DatasetProfile, previous: list[RunResult], limit: int) -> tuple[list[Config], dict[str, Any]]:
     key, provider_kind = llm_api_key()
     if not key:
-        return deterministic_candidates(profile, limit), {"provider": "deterministic-fallback"}
+        return deterministic_candidates(profile, limit), {
+            "provider": "deterministic-fallback",
+            "requested_provider": provider_kind,
+            "real_llm": False,
+        }
     prompt = {
         "dataset": asdict(profile),
         "previous_runs": [asdict(run) | {"stdout": "", "stderr": ""} for run in previous],
@@ -275,7 +318,8 @@ def llm_candidates(profile: DatasetProfile, previous: list[RunResult], limit: in
         "instruction": "Return JSON only. Suggest valid PeTTa miner configurations; do not invent mining results.",
     }
     default_model = "gemini-3.1-flash-lite" if provider_kind == "gemini" else "gpt-4o-mini"
-    model = os.environ.get("GEMINI_MODEL", os.environ.get("OPENAI_MODEL", default_model))
+    model_variable = "GEMINI_MODEL" if provider_kind == "gemini" else "OPENAI_MODEL"
+    model = os.environ.get(model_variable, default_model)
     if provider_kind == "gemini":
         model = model.removeprefix("models/")
         endpoint = os.environ.get(
@@ -363,7 +407,7 @@ def llm_candidates(profile: DatasetProfile, previous: list[RunResult], limit: in
         provider_name = "gemini" if provider_kind == "gemini" else "openai-compatible"
         return configs, {"provider": provider_name, "model": model,
                          "prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens,
-                         "finish_reason": finish_reason}
+                         "finish_reason": finish_reason, "real_llm": True}
     except Exception as exc:
         error = str(exc)
         if isinstance(exc, urllib.error.HTTPError):
@@ -466,9 +510,19 @@ def experiment_main(argv: list[str]) -> int:
                         default=["default", "random", "optuna", "deterministic", "llm-warmstart"])
     parser.add_argument("--recall-threshold", type=float, default=1.0)
     parser.add_argument("--mock-llm", action="store_true")
+    parser.add_argument(
+        "--require-gemini",
+        action="store_true",
+        help="fail instead of falling back unless every LLM warm-start call is live Gemini",
+    )
     parser.add_argument("--llm-mode", choices=["warmstart"], default="warmstart")
     parser.add_argument("--output", type=Path, default=Path("experiment-report.json"))
     args = parser.parse_args(argv)
+
+    if args.require_gemini and configured_llm_provider() != "gemini":
+        parser.error("--require-gemini requires LLM_PROVIDER=gemini")
+    if args.require_gemini and "llm-warmstart" not in args.methods:
+        parser.error("--require-gemini requires the llm-warmstart method")
 
     repo, dataset = args.repo.resolve(), args.dataset.resolve()
     profile = analyze_dataset(dataset)
@@ -497,11 +551,16 @@ def experiment_main(argv: list[str]) -> int:
                 configs = deterministic_candidates(profile, args.trials)
                 llm_metadata = {"provider": "deterministic-fallback", "fallback_count": 1}
             else:
-                llm_key, _ = llm_api_key()
+                llm_key, requested_provider = llm_api_key()
                 if args.mock_llm or not llm_key:
+                    if args.require_gemini:
+                        raise RuntimeError(
+                            "Gemini is required, but GEMINI_API_KEY is missing or mock mode is enabled"
+                        )
                     configs = deterministic_candidates(profile, args.trials)
                     llm_metadata = {
                         "provider": "MOCK - deterministic no-key fallback",
+                        "requested_provider": requested_provider,
                         "fallback_count": 1,
                         "real_llm": False,
                     }
@@ -511,6 +570,14 @@ def experiment_main(argv: list[str]) -> int:
                         "real_llm",
                         llm_metadata.get("provider") in {"gemini", "openai-compatible"},
                     )
+                    if args.require_gemini and not (
+                        llm_metadata.get("provider") == "gemini"
+                        and llm_metadata.get("real_llm") is True
+                    ):
+                        raise RuntimeError(
+                            "Gemini request did not complete as a live Gemini call: "
+                            + json.dumps(llm_metadata, sort_keys=True)
+                        )
 
             results = [
                 run_miner(repo, args.petta, dataset, config, args.timeout, args.petta_venv)
@@ -580,8 +647,15 @@ def main() -> int:
     parser.add_argument("--min-patterns", type=int, default=1)
     parser.add_argument("--config-file", type=Path,
                         help="JSON list of manual configurations; skips LLM proposals")
+    parser.add_argument(
+        "--require-gemini",
+        action="store_true",
+        help="fail unless the live proposal comes from Gemini",
+    )
     parser.add_argument("--output", type=Path, default=Path("optimizer-report.json"))
     args = parser.parse_args()
+    if args.require_gemini and args.config_file:
+        parser.error("--require-gemini cannot be used with --config-file")
     repo, dataset = args.repo.resolve(), args.dataset.resolve()
     profile = analyze_dataset(dataset)
     if args.config_file:
@@ -590,6 +664,13 @@ def main() -> int:
         llm = {"provider": "manual-config-file", "path": str(args.config_file.resolve())}
     else:
         configs, llm = llm_candidates(profile, [], args.trials)
+        if args.require_gemini and not (
+            llm.get("provider") == "gemini" and llm.get("real_llm") is True
+        ):
+            raise RuntimeError(
+                "Gemini is required, but the proposal was not a live Gemini response: "
+                + json.dumps(llm, sort_keys=True)
+            )
     results = [run_miner(repo, args.petta, dataset, config, args.timeout, args.petta_venv)
                for config in configs]
     best = select_best(results, args.max_seconds, args.min_patterns)

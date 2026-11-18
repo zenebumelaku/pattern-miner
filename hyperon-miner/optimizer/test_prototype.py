@@ -14,6 +14,7 @@ from prototype import (
     Config,
     analyze_dataset,
     experiment_main,
+    load_project_env,
     llm_candidates,
     make_script,
     llm_api_key,
@@ -69,14 +70,39 @@ class PrototypeTests(unittest.TestCase):
         self.assertEqual(configs[0].min_support, 1)
 
     def test_llm_api_key_prefers_gemini_then_openai(self):
-        with patch.dict(os.environ, {"GEMINI_API_KEY": "gemini-test-key"}, clear=True):
+        with patch.dict(os.environ, {
+            "LLM_PROVIDER": "gemini",
+            "GEMINI_API_KEY": "gemini-test-key",
+        }, clear=True):
             key, provider = llm_api_key()
             self.assertEqual(key, "gemini-test-key")
             self.assertEqual(provider, "gemini")
-        with patch.dict(os.environ, {"OPENAI_API_KEY": "openai-test-key"}, clear=True):
+        with patch.dict(os.environ, {
+            "LLM_PROVIDER": "openai",
+            "OPENAI_API_KEY": "openai-test-key",
+        }, clear=True):
             key, provider = llm_api_key()
             self.assertEqual(key, "openai-test-key")
             self.assertEqual(provider, "openai")
+
+    def test_gemini_is_default_and_does_not_fall_through_to_openai(self):
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "openai-test-key"}, clear=True):
+            key, provider = llm_api_key()
+        self.assertIsNone(key)
+        self.assertEqual(provider, "gemini")
+
+    def test_project_env_loads_gemini_settings_without_overriding_shell(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env_file = Path(directory) / ".env"
+            env_file.write_text(
+                'LLM_PROVIDER=gemini\nGEMINI_API_KEY="file-key"\nGEMINI_MODEL=file-model\n',
+                encoding="utf-8",
+            )
+            with patch.dict(os.environ, {"GEMINI_MODEL": "shell-model"}, clear=True):
+                load_project_env(env_file)
+                self.assertEqual(os.environ["LLM_PROVIDER"], "gemini")
+                self.assertEqual(os.environ["GEMINI_API_KEY"], "file-key")
+                self.assertEqual(os.environ["GEMINI_MODEL"], "shell-model")
 
     def test_gemini_request_normalizes_model_name_and_parses_proposal(self):
         response = io.BytesIO(json.dumps({
@@ -112,6 +138,7 @@ class PrototypeTests(unittest.TestCase):
         self.assertEqual(metadata["provider"], "gemini")
         self.assertEqual(metadata["model"], "gemini-2.5-flash")
         self.assertEqual(metadata["prompt_tokens"], 17)
+        self.assertTrue(metadata["real_llm"])
         self.assertEqual(configs[0].min_support, 2)
 
     def test_truncated_gemini_json_is_reported_as_fallback(self):

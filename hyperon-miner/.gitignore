@@ -2,6 +2,9 @@
 nvenv
 __pycache__/
 *.pyc
+.env
+.env.*
+!.env.example
 experiments/utils/surp-utils/conc_miner.metta
 
 

@@ -243,6 +243,7 @@ Set a provider key and optional endpoint/model:
 
 ```bash
 export OPENAI_API_KEY="your-api-key"
+export LLM_PROVIDER="openai"
 export OPENAI_MODEL="gpt-4o-mini"
 # Optional:
 export OPENAI_BASE_URL="https://api.openai.com/v1/chat/completions"
@@ -252,8 +253,10 @@ Then run without `--mock-llm`. Provider usage and errors are recorded only in th
 
 ### Gemini Provider
 
-Gemini uses the native `generateContent` API. Set the key and a model available to
-that key; model names may be supplied with or without the `models/` prefix:
+Gemini is the default provider and uses the native `generateContent` API. For a
+consistent project-wide setup, copy the repository's `.env.example` to `.env` and
+replace the placeholder key. Both CLI modes load that file, and explicit shell
+variables take precedence. You can also export the variables directly:
 
 ```bash
 export GEMINI_API_KEY="your-gemini-api-key"
@@ -264,7 +267,9 @@ unset GEMINI_BASE_URL
 Run without `--mock-llm`. Verify the report says `"provider": "gemini"` before
 counting the run as live LLM evidence. If a request fails, the report records
 the model, endpoint, and provider error details; fallback measurements are not
-live Gemini results.
+live Gemini results. Add `--require-gemini` to fail on a missing key, mock mode,
+provider error, or fallback instead of silently recording a non-live result. Use
+that flag for runs intended to produce Gemini evidence across every seed.
 
 ---
 
