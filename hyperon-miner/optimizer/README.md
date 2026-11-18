@@ -250,6 +250,22 @@ export OPENAI_BASE_URL="https://api.openai.com/v1/chat/completions"
 
 Then run without `--mock-llm`. Provider usage and errors are recorded only in the experiment report.
 
+### Gemini Provider
+
+Gemini uses the native `generateContent` API. Set the key and a model available to
+that key; model names may be supplied with or without the `models/` prefix:
+
+```bash
+export GEMINI_API_KEY="your-gemini-api-key"
+export GEMINI_MODEL="gemini-3.1-flash-lite"
+unset GEMINI_BASE_URL
+```
+
+Run without `--mock-llm`. Verify the report says `"provider": "gemini"` before
+counting the run as live LLM evidence. If a request fails, the report records
+the model, endpoint, and provider error details; fallback measurements are not
+live Gemini results.
+
 ---
 
 ## Miner Configuration

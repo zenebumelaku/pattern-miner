@@ -1,3 +1,4 @@
+import io
 import json
 import os
 import stat
@@ -5,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import urllib.error
 from unittest.mock import patch
 from pathlib import Path
 
@@ -14,6 +16,7 @@ from prototype import (
     experiment_main,
     llm_candidates,
     make_script,
+    llm_api_key,
     parse_pattern_set,
     parse_results,
     run_miner,
@@ -64,6 +67,91 @@ class PrototypeTests(unittest.TestCase):
         self.assertEqual(metadata["provider"], "deterministic-fallback")
         self.assertEqual(len(configs), 2)
         self.assertEqual(configs[0].min_support, 1)
+
+    def test_llm_api_key_prefers_gemini_then_openai(self):
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "gemini-test-key"}, clear=True):
+            key, provider = llm_api_key()
+            self.assertEqual(key, "gemini-test-key")
+            self.assertEqual(provider, "gemini")
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "openai-test-key"}, clear=True):
+            key, provider = llm_api_key()
+            self.assertEqual(key, "openai-test-key")
+            self.assertEqual(provider, "openai")
+
+    def test_gemini_request_normalizes_model_name_and_parses_proposal(self):
+        response = io.BytesIO(json.dumps({
+            "candidates": [{
+                "content": {"parts": [{"text": json.dumps({"configurations": [{
+                    "min_support": 2,
+                    "depth": 0,
+                    "mode": "none",
+                    "normalization": "none",
+                    "db_ratio": "none",
+                    "conj_exp": True,
+                    "init_pattern": "$x",
+                }]})}]},
+            }],
+            "usageMetadata": {"promptTokenCount": 17, "candidatesTokenCount": 9},
+        }).encode())
+        with patch.dict(os.environ, {
+            "GEMINI_API_KEY": "gemini-test-key",
+            "GEMINI_MODEL": "models/gemini-2.5-flash",
+        }, clear=True), patch("prototype.urllib.request.urlopen", return_value=response) as urlopen:
+            configs, metadata = llm_candidates(analyze_dataset(DATASET), [], 1)
+
+        request = urlopen.call_args.args[0]
+        self.assertEqual(urlopen.call_args.kwargs["timeout"], 180)
+        request_body = json.loads(request.data)
+        self.assertEqual(request_body["generationConfig"]["maxOutputTokens"], 512)
+        self.assertIn("responseSchema", request_body["generationConfig"])
+        self.assertEqual(
+            request.full_url,
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        )
+        self.assertEqual(request.get_header("X-goog-api-key"), "gemini-test-key")
+        self.assertEqual(metadata["provider"], "gemini")
+        self.assertEqual(metadata["model"], "gemini-2.5-flash")
+        self.assertEqual(metadata["prompt_tokens"], 17)
+        self.assertEqual(configs[0].min_support, 2)
+
+    def test_truncated_gemini_json_is_reported_as_fallback(self):
+        response = io.BytesIO(json.dumps({
+            "candidates": [{
+                "content": {"parts": [{"text": '{"configurations":[{"min_support":'}]},
+                "finishReason": "MAX_TOKENS",
+            }],
+        }).encode())
+        with patch.dict(os.environ, {
+            "GEMINI_API_KEY": "gemini-test-key",
+            "GEMINI_MODEL": "gemini-3.1-flash-lite",
+        }, clear=True), patch("prototype.urllib.request.urlopen", return_value=response):
+            configs, metadata = llm_candidates(analyze_dataset(DATASET), [], 1)
+
+        self.assertEqual(metadata["provider"], "fallback-after-llm-error")
+        self.assertEqual(metadata["finish_reason"], "MAX_TOKENS")
+        self.assertIn("Expecting", metadata["error"])
+        self.assertEqual(len(configs), 1)
+
+    def test_gemini_http_failure_records_endpoint_details_without_key(self):
+        error = urllib.error.HTTPError(
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+            404,
+            "Not Found",
+            {},
+            io.BytesIO(b'{"error":{"message":"model not found"}}'),
+        )
+        with patch.dict(os.environ, {
+            "GEMINI_API_KEY": "gemini-secret-test-key",
+            "GEMINI_MODEL": "gemini-2.5-flash",
+        }, clear=True), patch("prototype.urllib.request.urlopen", side_effect=error):
+            _, metadata = llm_candidates(analyze_dataset(DATASET), [], 1)
+
+        self.assertEqual(metadata["provider"], "fallback-after-llm-error")
+        self.assertEqual(metadata["model"], "gemini-2.5-flash")
+        self.assertIn("models/gemini-2.5-flash:generateContent", metadata["endpoint"])
+        self.assertIn("model not found", metadata["error"])
+        self.assertNotIn("gemini-secret-test-key", metadata["error"])
+        self.assertFalse(metadata["real_llm"])
 
     def test_generated_script_uses_actual_nine_argument_signature(self):
         script = make_script(REPO, DATASET, Config(3, 1, conj_exp=True))

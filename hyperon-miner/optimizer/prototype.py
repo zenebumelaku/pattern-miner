@@ -18,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -250,8 +251,18 @@ def deterministic_candidates(profile: DatasetProfile, limit: int) -> list[Config
     return configs[:limit]
 
 
+def llm_api_key() -> tuple[str | None, str]:
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+    if gemini_key:
+        return gemini_key, "gemini"
+    openai_key = os.environ.get("OPENAI_API_KEY")
+    if openai_key:
+        return openai_key, "openai"
+    return None, "none"
+
+
 def llm_candidates(profile: DatasetProfile, previous: list[RunResult], limit: int) -> tuple[list[Config], dict[str, Any]]:
-    key = os.environ.get("OPENAI_API_KEY")
+    key, provider_kind = llm_api_key()
     if not key:
         return deterministic_candidates(profile, limit), {"provider": "deterministic-fallback"}
     prompt = {
@@ -263,25 +274,112 @@ def llm_candidates(profile: DatasetProfile, previous: list[RunResult], limit: in
                                         "init_pattern": "$x"}]},
         "instruction": "Return JSON only. Suggest valid PeTTa miner configurations; do not invent mining results.",
     }
-    body = json.dumps({"model": os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
-                       "temperature": 0, "response_format": {"type": "json_object"},
-                       "messages": [{"role": "system", "content": "You are a cautious experiment planner."},
-                                    {"role": "user", "content": json.dumps(prompt)}]}).encode()
+    default_model = "gemini-3.1-flash-lite" if provider_kind == "gemini" else "gpt-4o-mini"
+    model = os.environ.get("GEMINI_MODEL", os.environ.get("OPENAI_MODEL", default_model))
+    if provider_kind == "gemini":
+        model = model.removeprefix("models/")
+        endpoint = os.environ.get(
+            "GEMINI_BASE_URL",
+            f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+        )
+        body = json.dumps({
+            "contents": [{"role": "user", "parts": [{"text": (
+                "You are a cautious experiment planner. "
+                "Return JSON only. Do not invent mining results.\n"
+                + json.dumps(prompt)
+            )}]}],
+            "generationConfig": {
+                "temperature": 0,
+                "responseMimeType": "application/json",
+                "maxOutputTokens": 512,
+                "responseSchema": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "configurations": {
+                            "type": "ARRAY",
+                            "items": {
+                                "type": "OBJECT",
+                                "properties": {
+                                    "min_support": {"type": "INTEGER"},
+                                    "depth": {"type": "INTEGER"},
+                                    "mode": {"type": "STRING", "enum": ["none"]},
+                                    "normalization": {"type": "STRING", "enum": ["none"]},
+                                    "db_ratio": {"type": "STRING", "enum": ["none"]},
+                                    "conj_exp": {"type": "BOOLEAN"},
+                                    "init_pattern": {"type": "STRING", "enum": ["$x"]},
+                                },
+                                "required": [
+                                    "min_support",
+                                    "depth",
+                                    "mode",
+                                    "normalization",
+                                    "db_ratio",
+                                    "conj_exp",
+                                    "init_pattern",
+                                ],
+                            },
+                        },
+                    },
+                    "required": ["configurations"],
+                },
+            },
+        }).encode()
+    else:
+        endpoint = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1/chat/completions")
+        body = json.dumps({"model": model,
+                           "temperature": 0, "response_format": {"type": "json_object"},
+                           "messages": [{"role": "system", "content": "You are a cautious experiment planner."},
+                                        {"role": "user", "content": json.dumps(prompt)}]}).encode()
     request = urllib.request.Request(
-        os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1/chat/completions"),
-        data=body, headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
-    request.add_header("Authorization", "Bearer " + key)
+        endpoint,
+        data=body, headers={"Content-Type": "application/json"})
+    if provider_kind == "gemini":
+        request.add_header("x-goog-api-key", key)
+    else:
+        request.add_header("Authorization", "Bearer " + key)
+    finish_reason: str | None = None
     try:
-        with urllib.request.urlopen(request, timeout=45) as response:
+        with urllib.request.urlopen(request, timeout=180) as response:
             payload = json.load(response)
-        content = payload["choices"][0]["message"]["content"]
+        if provider_kind == "gemini":
+            content = payload["candidates"][0]["content"]["parts"][0]["text"]
+            finish_reason = payload["candidates"][0].get("finishReason")
+            usage = payload.get("usageMetadata", {})
+            prompt_tokens = usage.get("promptTokenCount")
+            completion_tokens = usage.get("candidatesTokenCount")
+        else:
+            content = payload["choices"][0]["message"]["content"]
+            usage = payload.get("usage", {})
+            prompt_tokens = usage.get("prompt_tokens")
+            completion_tokens = usage.get("completion_tokens")
         items = json.loads(content).get("configurations", [])
         configs = [Config(**item) for item in items[:limit]]
-        usage = payload.get("usage", {})
-        return configs, {"provider": "openai-compatible", "model": body and json.loads(body)["model"],
-                         "prompt_tokens": usage.get("prompt_tokens"), "completion_tokens": usage.get("completion_tokens")}
+        if not configs:
+            raise ValueError("provider returned no configurations")
+        for config in configs:
+            errors = validate_config(config, profile)
+            if errors:
+                raise ValueError(f"provider returned invalid configuration: {'; '.join(errors)}")
+        provider_name = "gemini" if provider_kind == "gemini" else "openai-compatible"
+        return configs, {"provider": provider_name, "model": model,
+                         "prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens,
+                         "finish_reason": finish_reason}
     except Exception as exc:
-        return deterministic_candidates(profile, limit), {"provider": "fallback-after-llm-error", "error": str(exc)}
+        error = str(exc)
+        if isinstance(exc, urllib.error.HTTPError):
+            details = exc.read().decode("utf-8", errors="replace")
+            if details:
+                error = f"{error}: {details}"
+        safe_error = error.replace(key, "[redacted]")
+        return deterministic_candidates(profile, limit), {
+            "provider": "fallback-after-llm-error",
+            "model": model,
+            "endpoint": endpoint,
+            "error": safe_error,
+            "finish_reason": finish_reason,
+            "fallback_count": 1,
+            "real_llm": False,
+        }
 
 
 def select_best(results: list[RunResult], max_seconds: float | None, min_patterns: int) -> RunResult | None:
@@ -399,7 +497,8 @@ def experiment_main(argv: list[str]) -> int:
                 configs = deterministic_candidates(profile, args.trials)
                 llm_metadata = {"provider": "deterministic-fallback", "fallback_count": 1}
             else:
-                if args.mock_llm or not os.environ.get("OPENAI_API_KEY"):
+                llm_key, _ = llm_api_key()
+                if args.mock_llm or not llm_key:
                     configs = deterministic_candidates(profile, args.trials)
                     llm_metadata = {
                         "provider": "MOCK - deterministic no-key fallback",
@@ -408,7 +507,10 @@ def experiment_main(argv: list[str]) -> int:
                     }
                 else:
                     configs, llm_metadata = llm_candidates(profile, [], args.trials)
-                    llm_metadata["real_llm"] = True
+                    llm_metadata.setdefault(
+                        "real_llm",
+                        llm_metadata.get("provider") in {"gemini", "openai-compatible"},
+                    )
 
             results = [
                 run_miner(repo, args.petta, dataset, config, args.timeout, args.petta_venv)
