@@ -1,62 +1,28 @@
 # Runtime Validation Report
 
 **Generated**: 2026-11-18
-**Target**: `optimizer/prototype.py` and its feature modules
+**Target**: `optimizer/prototype.py` and its optimizer modules
 
 ## Summary
 
-| Step | Status | Exit Code | Details |
-|------|--------|-----------|---------|
-| Static diagnostics | PASS | 0 | No editor diagnostics in `optimizer/` |
-| Python environment | PASS | 0 | `.venv/bin/python` runs Python 3.11.9 and declared dependencies are installed |
-| Unit/integration tests | PASS | 0 | 20 tests passed in 34.992 seconds |
-| CLI entry points | PASS | 0 | Normal, experiment, and report help commands started successfully |
-| CLI normal flow | PASS | 0 | Existing fake-PeTTa subprocess test completed successfully |
-| CLI experiment flow | PASS | 0 | Fake miner, repeated seeds, SQLite caching, and mock LLM completed successfully |
-| SQLite report flow | PASS | 0 | SQLite fixture report generation and `report --db --run-id` CLI completed successfully |
-| Browser E2E | N/A | n/a | This is a CLI/library project with no web server or browser UI |
+| Check | Status | Details |
+|---|---|---|
+| Unit tests | PASS | 15 optimizer tests passed |
+| Live provider request | PASS | Gemini returned valid JSON with 291 tokens in the direct smoke request |
+| Live experiment | PASS | Three provider calls completed with `provider=gemini`, `real_llm=true`, and zero LLM fallbacks |
+| PeTTa reference run | PASS | Reference configuration completed and produced 18 patterns |
+| Strict live-mode enforcement | PASS | Missing credentials and provider failures stop the run instead of recording fallback evidence |
 
-**Overall**: PASS — all applicable runtime and end-to-end checks completed successfully.
+## Live experiment evidence
 
-## Environment Evidence
+The reproducible report is [live-llm-experiment.json](optimizer/live-llm-experiment.json).
+It used one trial for each of seeds `11`, `22`, and `33` on
+`very-small-ugly.metta`, with a 20-second PeTTa timeout.
 
-- Docker: unavailable — `docker` is not installed.
-- Node.js: unavailable — `node` is not installed.
-- Playwright: unavailable — `npx` is not installed.
-- Project Python: available — `.venv/bin/python --version` reports `Python 3.11.9`.
-- Dependencies: available — `scipy`, `hyperon==0.2.6`, `regex`, `optuna`, and `matplotlib` are installed.
-- Host developer tools: available — `xcrun --find clang` resolves to `/Library/Developer/CommandLineTools/usr/bin/clang`.
-- VS Code browser E2E: not applicable — no web server or browser UI exists in this project.
+- Gemini model: `gemini-3.1-flash-lite`.
+- LLM proposal: `min_support=1`, `depth=1`.
+- All three seeds completed in 8.234–9.487 seconds with two patterns and 0% reference recall.
+- The deterministic baseline completed in 3.622–4.498 seconds with 100% recall.
 
-## Executed End-to-End Flows
-
-The complete test suite was run with:
-
-```bash
-.venv/bin/python -m unittest discover -s optimizer -p 'test_*.py' -v
-```
-
-Result: `Ran 20 tests ... OK`.
-
-The end-to-end coverage already present in `optimizer/test_prototype.py` exercises:
-
-1. The normal CLI with a deterministic fake PeTTa executable.
-2. The public experiment CLI with manual/random methods, a deterministic fake
-   miner, mock LLM warm-starting, and SQLite output.
-3. Experiment mode with repeated seeds, SQLite caching, and mock LLM warm-starting.
-4. Report reconstruction from SQLite, the public `report --db --run-id` command,
-   and offline JSON/HTML/Markdown/PNG generation.
-
-The relevant manual smoke commands are:
-
-```bash
-.venv/bin/python optimizer/prototype.py --help
-.venv/bin/python optimizer/prototype.py experiment --help
-.venv/bin/python optimizer/prototype.py report --help
-```
-
-## Issues
-
-| # | Severity | Description | Action |
-|---|----------|-------------|--------|
-| 1 | Informational | Docker, Node.js, and Playwright are unavailable. | No gap for this CLI/library project; browser E2E is not applicable. |
+The result is a real provider experiment, but it is inconclusive as a quality
+or performance claim.

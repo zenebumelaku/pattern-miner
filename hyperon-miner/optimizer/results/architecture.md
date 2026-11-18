@@ -7,8 +7,8 @@ flowchart TD
   C -->|default| D[Config min_support=3 depth=0]
   C -->|random| E[Seeded random configs]
   C -->|optuna| F[Optuna trials]
-  C -->|deterministic| G[Deterministic fallback configs]
-  C -->|LLM warm start| H[LLM or mock proposal]
+  C -->|deterministic| G[Deterministic baseline configs]
+  C -->|LLM warm start| H[Live provider JSON proposal]
   D --> V[Configuration validator]
   E --> V
   F --> V
@@ -30,18 +30,24 @@ flowchart TD
 - Dataset profiler: atom lines, link lines, predicates, symbols, and bytes.
 - Configuration validator: support range, depth, supported mode fields, and conjunction-expansion requirements.
 - Runner: substitutes parameters into the existing miner script and launches PeTTa.
-- Experiment layer: default, seeded random, Optuna, deterministic fallback, and LLM/mock warm start.
-- Reporter: records configuration, status, runtime, memory, pattern count, pattern identities, recall, and fallback metadata.
+- Experiment layer: default, seeded random, Optuna, deterministic baseline, and live LLM warm start.
+- Reporter: records configuration, status, runtime, memory, pattern count, pattern identities, recall, and provider metadata.
 
 ## Data flow
 
-The CLI profiles one dataset and proposes configurations. Each valid configuration produces a temporary MeTTa script. The existing PeTTa runner executes the symbolic miner and stdout is parsed into metrics and pattern identities. The experiment report compares candidate pattern sets with the `min_support=1, depth=0` reference.
+The CLI profiles one dataset and sends only summary statistics and prior-run
+metadata to the LLM provider. The provider returns JSON parameter sets; it
+never receives or generates pattern identities, support values, or mining
+results. Each valid configuration produces a temporary MeTTa script. PeTTa
+executes the symbolic miner, and stdout is parsed into metrics and pattern
+identities. The experiment report compares candidate pattern sets with the
+`min_support=1, depth=0` reference.
 
-## Control flow and failure path
+## Failure path
 
-- Missing API key: deterministic fallback.
-- Mock mode: deterministic fallback labeled as MOCK.
-- LLM error or invalid JSON: existing code records fallback metadata and uses deterministic candidates.
+- Missing credentials in live mode: fail before recording LLM evidence.
+- Transient provider status: bounded retry, then fail the live run.
+- Invalid JSON or invalid configuration: fail the live run.
+- Explicit `--allow-llm-fallback`: deterministic fallback for offline development only.
 - Invalid configuration: recorded as invalid without launching PeTTa.
 - Miner timeout or nonzero process exit: recorded as timeout or failed.
-- The LLM receives only dataset summary statistics and prior-run metadata. It is instructed to return JSON parameter sets only and never pattern identities or mined results.

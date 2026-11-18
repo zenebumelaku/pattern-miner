@@ -208,7 +208,8 @@ def run_miner(repo: Path, petta: str, dataset: Path, config: Config,
         script.unlink(missing_ok=True)
 
 
-# Offline deterministic candidate generation.
+# Deterministic baseline candidate generation. This is intentionally separate
+# from the live LLM proposal path and is useful for reproducible comparisons.
 def deterministic_candidates(profile: DatasetProfile, limit: int) -> list[Config]:
     upper = max(1, profile.atom_lines)
     supports = sorted({1, max(1, upper // 20), max(1, upper // 10), max(1, upper // 4)})

@@ -73,6 +73,12 @@ class PrototypeTests(unittest.TestCase):
         self.assertEqual(len(configs), 2)
         self.assertEqual(configs[0].min_support, 1)
 
+    def test_live_llm_mode_rejects_missing_credentials(self):
+        profile = analyze_dataset(DATASET)
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "credentials are required"):
+                llm_candidates(profile, [], 1, require_live=True)
+
     def test_llm_api_key_prefers_gemini_then_openai(self):
         with patch.dict(os.environ, {
             "LLM_PROVIDER": "gemini",

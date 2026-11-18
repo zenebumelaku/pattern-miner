@@ -1,13 +1,14 @@
-"""LLM-backed configuration proposal and deterministic fallback.
+"""LLM-backed configuration proposal with an explicit offline fallback.
 
 Main responsibility: request valid experiment configurations from supported
-providers and fall back safely when a provider is unavailable.
+providers; offline fallback is available only to callers that explicitly opt in.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from dataclasses import asdict
@@ -43,10 +44,21 @@ def llm_api_key() -> tuple[str | None, str]:
     return None, provider
 
 
-# Ask the provider for configurations, with deterministic fallback on failure.
-def llm_candidates(profile: DatasetProfile, previous: list[RunResult], limit: int) -> tuple[list[Config], dict[str, Any]]:
+# Ask the provider for configurations. Live experiments can require a real
+# provider response; offline callers may explicitly opt into the fallback.
+def llm_candidates(
+    profile: DatasetProfile,
+    previous: list[RunResult],
+    limit: int,
+    *,
+    require_live: bool = False,
+) -> tuple[list[Config], dict[str, Any]]:
     key, provider_kind = llm_api_key()
     if not key:
+        if require_live:
+            raise RuntimeError(
+                f"{provider_kind} credentials are required for a live LLM experiment"
+            )
         return deterministic_candidates(profile, limit), {
             "provider": "deterministic-fallback",
             "requested_provider": provider_kind,
@@ -127,8 +139,17 @@ def llm_candidates(profile: DatasetProfile, previous: list[RunResult], limit: in
         request.add_header("Authorization", "Bearer " + key)
     finish_reason: str | None = None
     try:
-        with urllib.request.urlopen(request, timeout=180) as response:
-            payload = json.load(response)
+        retryable_statuses = {408, 429, 500, 502, 503, 504}
+        max_retries = max(0, int(os.environ.get("LLM_RETRIES", "2")))
+        for attempt in range(max_retries + 1):
+            try:
+                with urllib.request.urlopen(request, timeout=180) as response:
+                    payload = json.load(response)
+                break
+            except urllib.error.HTTPError as exc:
+                if exc.code not in retryable_statuses or attempt == max_retries:
+                    raise
+                time.sleep(2 ** attempt)
         if provider_kind == "gemini":
             content = payload["candidates"][0]["content"]["parts"][0]["text"]
             finish_reason = payload["candidates"][0].get("finishReason")
@@ -159,6 +180,10 @@ def llm_candidates(profile: DatasetProfile, previous: list[RunResult], limit: in
             if details:
                 error = f"{error}: {details}"
         safe_error = error.replace(key, "[redacted]")
+        if require_live:
+            raise RuntimeError(
+                f"live {provider_kind} request failed: {safe_error}"
+            ) from exc
         return deterministic_candidates(profile, limit), {
             "provider": "fallback-after-llm-error",
             "model": model,

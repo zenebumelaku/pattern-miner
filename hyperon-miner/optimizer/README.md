@@ -37,7 +37,7 @@ Find whether LLM warm start can find a low-runtime, valid miner configuration wi
 - Parses support values and symbolic pattern identities.
 - Compares candidate pattern sets against a reference pattern set.
 - Reports default, random, Optuna, deterministic, and LLM warm-start methods.
-- Provides deterministic fallback behavior when no API key or mock mode is used.
+- Uses a live LLM proposal path for warm-start experiments; deterministic search is a separate reproducible baseline.
 
 The prototype does **not** replace symbolic mining with an LLM. PeTTa remains the source of all pattern results.
 
@@ -52,7 +52,7 @@ flowchart LR
     C -->|Default| D[3 / 0]
     C -->|Random| E[Seeded Candidates]
     C -->|Optuna| F[Optuna Trials]
-    C -->|Deterministic| G[Fallback Candidates]
+    C -->|Deterministic| G[Baseline Candidates]
     C -->|LLM Warm Start| H[JSON Configurations]
     D --> I[Configuration Validator]
     E --> I
@@ -92,9 +92,9 @@ The LLM never receives or invents pattern identities, support values, or mining 
 
 ### Failure Handling
 
-- No API key: deterministic fallback.
-- Mock mode: deterministic fallback labeled `MOCK`.
-- LLM/network/JSON error: deterministic fallback with fallback metadata.
+- Missing credentials in a live experiment: fail before recording LLM evidence.
+- Transient provider errors: retry a bounded number of times, then fail the live experiment.
+- Offline fallback: available only with the explicit `--allow-llm-fallback` option and excluded from live evidence.
 - Invalid configuration: recorded as `invalid`.
 - PeTTa timeout: recorded as `timeout`.
 - Miner crash or nonzero exit: recorded as `failed`.
@@ -103,15 +103,15 @@ The LLM never receives or invents pattern identities, support values, or mining 
 
 ## Experiment Protocol
 
-The recorded experiment used:
+The live experiment recorded in [live-llm-experiment.json](./live-llm-experiment.json) used:
 
 | Setting | Value |
 |---|---|
 | Trial budget | 1 trial per method per seed |
 | Seeds | `11`, `22`, `33` |
-| Timeout | 30 seconds |
+| Timeout | 20 seconds |
 | Recall threshold | 20% |
-| Datasets | 9, 20, and 60 parsed atom lines |
+| Dataset | `very-small-ugly.metta` (9 parsed atom lines) |
 | Reference config | `min_support=1`, `depth=0` |
 
 The baseline methods are:
@@ -122,7 +122,7 @@ The baseline methods are:
 - Deterministic heuristic
 - LLM warm start
 
-> **LLM status:** No `OPENAI_API_KEY` was available. All warm-start rows in the recorded evidence are labeled **MOCK** and use the deterministic no-key fallback. They are not evidence of real LLM value.
+> **LLM status:** The three warm-start rows were live Gemini calls using `gemini-3.1-flash-lite`. Each response reported `real_llm=true` and zero LLM fallbacks. All three PeTTa trials completed in 8.234–9.487 seconds but produced no qualifying recall against the depth-0 reference.
 
 ---
 
@@ -139,24 +139,25 @@ The raw symbolic output contained:
 (supportOf (, (Inheritance $_0 $_1) (Inheritance $_2 $_1)) 27)
 ```
 
-### Configuration Sweep
+### Live LLM Run
 
-| Dataset | Runtime range | Reference patterns |
-|---|---:|---:|
-| Very-small: 9 atoms | 2.116–12.619 s | 18 |
-| Small: 20 atoms | 2.181–12.254 s | 32 |
-| Ugly/man/soda-drinker: 60 atoms | 2.184–7.736 s | 86 |
+| Method | Seed | Provider | Miner status | Miner runtime | Recall |
+|---|---:|---|---|---:|---:|
+| Deterministic baseline | 11 | baseline | ok | 3.622 s | 100% |
+| Deterministic baseline | 22 | baseline | ok | 3.803 s | 100% |
+| Deterministic baseline | 33 | baseline | ok | 4.498 s | 100% |
+| LLM warm start | 11 | Gemini | ok | 9.487 s | 0% |
+| LLM warm start | 22 | Gemini | ok | 8.591 s | 0% |
+| LLM warm start | 33 | Gemini | ok | 8.234 s | 0% |
 
 ### Comparison Verdict
 
-**Verdict: PARTLY**
+**Verdict: inconclusive**
 
-- The mock warm-start method achieved **100% measured recall** in all 18 seed/dataset comparisons.
-- It was faster than the sole qualifying small-dataset Optuna result:
-  **2.975 s versus 4.211 s**.
-- It was slower than qualifying very-small random and Optuna results.
-- Default, random, and Optuna lacked qualifying results on several datasets.
-- Real LLM performance remains untested.
+- The provider calls were real Gemini responses with no LLM fallback.
+- The LLM-selected depth-1 configuration did not meet the 20% recall threshold in any of the three completed miner runs.
+- The deterministic baseline recovered all 18 reference patterns in each seed and ran faster than every LLM-selected run.
+- This one-dataset, one-trial-per-seed run does not establish a performance benefit for the LLM.
 
 Full evidence is available in [`results/`](../results/):
 
@@ -232,7 +233,6 @@ cd hyperon-miner
   --seeds 11 22 33 \
   --methods default random optuna deterministic llm-warmstart \
   --recall-threshold 0.20 \
-  --mock-llm \
   --llm-mode warmstart \
   --output experiment-report.json
 ```
@@ -249,7 +249,7 @@ export OPENAI_MODEL="gpt-4o-mini"
 export OPENAI_BASE_URL="https://api.openai.com/v1/chat/completions"
 ```
 
-Then run without `--mock-llm`. Provider usage and errors are recorded only in the experiment report.
+Run the experiment without fallback enabled. Provider usage and errors are recorded in the experiment report; a provider failure stops a live experiment.
 
 ### Gemini Provider
 
@@ -264,12 +264,11 @@ export GEMINI_MODEL="gemini-3.1-flash-lite"
 unset GEMINI_BASE_URL
 ```
 
-Run without `--mock-llm`. Verify the report says `"provider": "gemini"` before
-counting the run as live LLM evidence. If a request fails, the report records
-the model, endpoint, and provider error details; fallback measurements are not
-live Gemini results. Add `--require-gemini` to fail on a missing key, mock mode,
-provider error, or fallback instead of silently recording a non-live result. Use
-that flag for runs intended to produce Gemini evidence across every seed.
+Run with the default strict live mode. Verify each warm-start report row says
+`"provider": "gemini"` and `"real_llm": true` before counting it as live LLM
+evidence. Missing credentials, provider errors, and invalid responses fail the
+run instead of being recorded as LLM results. Use
+`--allow-llm-fallback` only for explicitly offline development runs.
 
 ---
 
@@ -305,7 +304,7 @@ Run the optimizer test suite from `hyperon-miner/`:
 .venv/bin/python -m unittest discover -s optimizer -p 'test_*.py' -v
 ```
 
-The suite covers configuration validation, output parsing, pattern-set parsing, script generation, fallback behavior, fake-PeTTa execution, timeout serialization, and CLI report creation.
+The suite covers configuration validation, output parsing, pattern-set parsing, script generation, live-mode credential enforcement, offline fallback behavior, test-double PeTTa execution, timeout serialization, and CLI report creation.
 
 ---
 
@@ -314,7 +313,7 @@ The suite covers configuration validation, output parsing, pattern-set parsing, 
 - Runtime and memory are process-level measurements, not isolated algorithm-only profiles.
 - Memory values are child-process high-water-mark deltas.
 - Recall is set-based; it does not model pattern support ranking.
-- The no-key experiment is deterministic and not evidence of real LLM quality.
+- Live LLM quality is only demonstrated by reports whose provider metadata says `real_llm=true`; offline fallback runs are not evidence.
 - Random, Optuna, and warm-start methods currently use a small one-trial budget.
 - The prototype does not modify or replace the PeTTa symbolic miner.
 - PeTTa startup and interpreter behavior are included in measured runtimes.
@@ -328,7 +327,7 @@ optimizer/
 ├── prototype.py        Backward-compatible CLI entry point
 ├── cli.py              Normal and experiment CLI workflows
 ├── miner.py            Dataset analysis, script generation, and PeTTa runs
-├── llm.py              LLM configuration proposals and fallback logic
+├── llm.py              LLM configuration proposals and explicit offline fallback
 ├── search.py           Candidate generation and result selection
 ├── models.py           Shared configuration and result data models
 ├── env.py              Project .env loading

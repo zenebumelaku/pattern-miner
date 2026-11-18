@@ -18,7 +18,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from .llm import configured_llm_provider, llm_api_key, llm_candidates
+from .llm import configured_llm_provider, llm_candidates
 from .miner import analyze_dataset, deterministic_candidates, run_miner, validate_config
 from .models import Config
 from .search import optuna_candidates, random_candidates, recall_fraction, select_best
@@ -41,21 +41,18 @@ def experiment_main(argv: list[str]) -> int:
                         choices=["default", "random", "optuna", "deterministic", "llm-warmstart"],
                         default=["default", "random", "optuna", "deterministic", "llm-warmstart"])
     parser.add_argument("--recall-threshold", type=float, default=1.0)
-    parser.add_argument("--mock-llm", action="store_true")
     parser.add_argument(
-        "--require-gemini",
+        "--allow-llm-fallback",
         action="store_true",
-        help="fail instead of falling back unless every LLM warm-start call is live Gemini",
+        help="allow deterministic fallback when the LLM provider is unavailable",
     )
     parser.add_argument("--llm-mode", choices=["warmstart"], default="warmstart")
     parser.add_argument("--output", type=Path, default=Path("experiment-report.json"))
     args = parser.parse_args(argv)
 
-    # Validate options that only apply to live Gemini experiments.
-    if args.require_gemini and configured_llm_provider() != "gemini":
-        parser.error("--require-gemini requires LLM_PROVIDER=gemini")
-    if args.require_gemini and "llm-warmstart" not in args.methods:
-        parser.error("--require-gemini requires the llm-warmstart method")
+    # LLM warm-start is live by default. Offline fallback must be explicit.
+    if not args.allow_llm_fallback and "llm-warmstart" in args.methods:
+        configured_llm_provider()
 
     # Establish the reference run used for recall comparisons.
     repo, dataset = args.repo.resolve(), args.dataset.resolve()
@@ -84,35 +81,18 @@ def experiment_main(argv: list[str]) -> int:
                 )
             elif method == "deterministic":
                 configs = deterministic_candidates(profile, args.trials)
-                llm_metadata = {"provider": "deterministic-fallback", "fallback_count": 1}
+                llm_metadata = {"provider": "deterministic-baseline", "fallback_count": 0}
             else:
-                llm_key, requested_provider = llm_api_key()
-                if args.mock_llm or not llm_key:
-                    if args.require_gemini:
-                        raise RuntimeError(
-                            "Gemini is required, but GEMINI_API_KEY is missing or mock mode is enabled"
-                        )
-                    configs = deterministic_candidates(profile, args.trials)
-                    llm_metadata = {
-                        "provider": "MOCK - deterministic no-key fallback",
-                        "requested_provider": requested_provider,
-                        "fallback_count": 1,
-                        "real_llm": False,
-                    }
-                else:
-                    configs, llm_metadata = llm_candidates(profile, [], args.trials)
-                    llm_metadata.setdefault(
-                        "real_llm",
-                        llm_metadata.get("provider") in {"gemini", "openai-compatible"},
-                    )
-                    if args.require_gemini and not (
-                        llm_metadata.get("provider") == "gemini"
-                        and llm_metadata.get("real_llm") is True
-                    ):
-                        raise RuntimeError(
-                            "Gemini request did not complete as a live Gemini call: "
-                            + json.dumps(llm_metadata, sort_keys=True)
-                        )
+                configs, llm_metadata = llm_candidates(
+                    profile,
+                    [],
+                    args.trials,
+                    require_live=not args.allow_llm_fallback,
+                )
+                llm_metadata.setdefault(
+                    "real_llm",
+                    llm_metadata.get("provider") in {"gemini", "openai-compatible"},
+                )
 
             results = [
                 run_miner(repo, args.petta, dataset, config, args.timeout, args.petta_venv)
@@ -185,16 +165,14 @@ def main() -> int:
     parser.add_argument("--config-file", type=Path,
                         help="JSON list of manual configurations; skips LLM proposals")
     parser.add_argument(
-        "--require-gemini",
+        "--allow-llm-fallback",
         action="store_true",
-        help="fail unless the live proposal comes from Gemini",
+        help="allow deterministic fallback when the LLM provider is unavailable",
     )
     parser.add_argument("--output", type=Path, default=Path("optimizer-report.json"))
     args = parser.parse_args()
 
     # Resolve the source dataset and configuration proposals.
-    if args.require_gemini and args.config_file:
-        parser.error("--require-gemini cannot be used with --config-file")
     repo, dataset = args.repo.resolve(), args.dataset.resolve()
     profile = analyze_dataset(dataset)
     if args.config_file:
@@ -202,14 +180,12 @@ def main() -> int:
         configs = [Config(**item) for item in raw_configs[:args.trials]]
         llm = {"provider": "manual-config-file", "path": str(args.config_file.resolve())}
     else:
-        configs, llm = llm_candidates(profile, [], args.trials)
-        if args.require_gemini and not (
-            llm.get("provider") == "gemini" and llm.get("real_llm") is True
-        ):
-            raise RuntimeError(
-                "Gemini is required, but the proposal was not a live Gemini response: "
-                + json.dumps(llm, sort_keys=True)
-            )
+        configs, llm = llm_candidates(
+            profile,
+            [],
+            args.trials,
+            require_live=not args.allow_llm_fallback,
+        )
     # Execute each candidate through the symbolic miner.
     results = [run_miner(repo, args.petta, dataset, config, args.timeout, args.petta_venv)
                for config in configs]
