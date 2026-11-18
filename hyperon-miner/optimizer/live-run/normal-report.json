@@ -1,0 +1,186 @@
+{
+  "dataset": {
+    "path": "/Users/zeni/Desktop/projects/pattern/hyperon-miner/experiments/data/very-small-ugly.metta",
+    "atom_lines": 9,
+    "link_lines": 9,
+    "predicates": {
+      "Inheritance": 9
+    },
+    "distinct_symbols": 9,
+    "bytes": 266
+  },
+  "miner": {
+    "signature": [
+      "$kb",
+      "$db",
+      "$initpat",
+      "$minsup",
+      "$depth",
+      "$surp-mode",
+      "$normalization",
+      "$db-ratio",
+      "$conj_exp"
+    ],
+    "version": "sha256-ab922c36ed12f2d79b98332875b6a3a299dd98bef60d5954c12314e793bed404"
+  },
+  "config_fields": {
+    "init_pattern": {
+      "source_parameter": "$initpat",
+      "classification": "semantic",
+      "reason": "source passes the parameter into the mining pipeline",
+      "evidence": "($frequent-pattern  (frequency-pattern-miner &db $initpat &cndpspace &conjspace $minsup $depth $conj_exp))"
+    },
+    "min_support": {
+      "source_parameter": "$minsup",
+      "classification": "semantic",
+      "reason": "source passes the parameter into the mining pipeline",
+      "evidence": "($frequent-pattern  (frequency-pattern-miner &db $initpat &cndpspace &conjspace $minsup $depth $conj_exp))"
+    },
+    "depth": {
+      "source_parameter": "$depth",
+      "classification": "semantic",
+      "reason": "source passes the parameter into the mining pipeline",
+      "evidence": "($frequent-pattern  (frequency-pattern-miner &db $initpat &cndpspace &conjspace $minsup $depth $conj_exp))"
+    },
+    "mode": {
+      "source_parameter": "$surp-mode",
+      "classification": "semantic",
+      "reason": "source passes the parameter into the mining pipeline",
+      "evidence": "($dummy3  (call-surprisingness $kb &db $frequent-pattern $surp-mode $normalization $db-ratio))"
+    },
+    "normalization": {
+      "source_parameter": "$normalization",
+      "classification": "semantic",
+      "reason": "source passes the parameter into the mining pipeline",
+      "evidence": "($dummy3  (call-surprisingness $kb &db $frequent-pattern $surp-mode $normalization $db-ratio))"
+    },
+    "db_ratio": {
+      "source_parameter": "$db-ratio",
+      "classification": "semantic",
+      "reason": "source passes the parameter into the mining pipeline",
+      "evidence": "($dummy3  (call-surprisingness $kb &db $frequent-pattern $surp-mode $normalization $db-ratio))"
+    },
+    "conj_exp": {
+      "source_parameter": "$conj_exp",
+      "classification": "semantic",
+      "reason": "source passes the parameter into the mining pipeline",
+      "evidence": "($frequent-pattern  (frequency-pattern-miner &db $initpat &cndpspace &conjspace $minsup $depth $conj_exp))"
+    }
+  },
+  "llm": {
+    "provider": "manual-config-file",
+    "path": "/Users/zeni/Desktop/projects/pattern/hyperon-miner/optimizer/quick-experiment.json"
+  },
+  "reference": {
+    "cache": {
+      "cache_path": "/Users/zeni/Desktop/projects/pattern/hyperon-miner/optimizer/live-run/cache/reference-4afb8ea5445051e61a9dec7d85e3106f722ca6635db9f83a73155e907549f7db-sha256-ab922c36ed12f2d79b98332875b6a3a299dd98bef60d5954c12314e793bed404.json",
+      "dataset_hash": "4afb8ea5445051e61a9dec7d85e3106f722ca6635db9f83a73155e907549f7db",
+      "miner_version": "sha256-ab922c36ed12f2d79b98332875b6a3a299dd98bef60d5954c12314e793bed404",
+      "cache_key": "4afb8ea5445051e61a9dec7d85e3106f722ca6635db9f83a73155e907549f7db:sha256-ab922c36ed12f2d79b98332875b6a3a299dd98bef60d5954c12314e793bed404",
+      "cached": false
+    },
+    "config": {
+      "min_support": 1,
+      "depth": 0,
+      "mode": "none",
+      "normalization": "none",
+      "db_ratio": "none",
+      "conj_exp": false,
+      "init_pattern": "$x"
+    },
+    "result": {
+      "config": {
+        "min_support": 1,
+        "depth": 0,
+        "mode": "none",
+        "normalization": "none",
+        "db_ratio": "none",
+        "conj_exp": false,
+        "init_pattern": "$x"
+      },
+      "status": "ok",
+      "elapsed_seconds": 0.5742630469994765,
+      "peak_memory_mb": 18.76953125,
+      "pattern_count": 0,
+      "support_values": [],
+      "surprisingness_values": [],
+      "stdout": "[(Error (import! ModuleSpace(GroundingSpace-top) experiments/utils/common-utils) Illegal module name: experiments/utils/common-utils)]\n",
+      "stderr": "",
+      "error": null,
+      "patterns": [],
+      "comparison": null
+    }
+  },
+  "results": [
+    {
+      "config": {
+        "min_support": 2,
+        "depth": 0,
+        "mode": "none",
+        "normalization": "none",
+        "db_ratio": "none",
+        "conj_exp": true,
+        "init_pattern": "$x"
+      },
+      "status": "ok",
+      "elapsed_seconds": 0.3527488750005432,
+      "peak_memory_mb": 0.00390625,
+      "pattern_count": 0,
+      "support_values": [],
+      "surprisingness_values": [],
+      "stdout": "[(Error (import! ModuleSpace(GroundingSpace-top) experiments/utils/common-utils) Illegal module name: experiments/utils/common-utils)]\n",
+      "stderr": "",
+      "error": null,
+      "patterns": [],
+      "comparison": {
+        "reference_status": "ok",
+        "reference_pattern_count": 0,
+        "run_pattern_count": 0,
+        "matched_pattern_count": 0,
+        "support_matches": 0,
+        "recall": 1.0,
+        "precision": 1.0,
+        "f1": 1.0,
+        "support_agreement": 0.0
+      }
+    },
+    {
+      "config": {
+        "min_support": 3,
+        "depth": 0,
+        "mode": "none",
+        "normalization": "none",
+        "db_ratio": "none",
+        "conj_exp": true,
+        "init_pattern": "$x"
+      },
+      "status": "ok",
+      "elapsed_seconds": 0.9049885259992152,
+      "peak_memory_mb": 0.0234375,
+      "pattern_count": 0,
+      "support_values": [],
+      "surprisingness_values": [],
+      "stdout": "[(Error (import! ModuleSpace(GroundingSpace-top) experiments/utils/common-utils) Illegal module name: experiments/utils/common-utils)]\n",
+      "stderr": "",
+      "error": null,
+      "patterns": [],
+      "comparison": {
+        "reference_status": "ok",
+        "reference_pattern_count": 0,
+        "run_pattern_count": 0,
+        "matched_pattern_count": 0,
+        "support_matches": 0,
+        "recall": 1.0,
+        "precision": 1.0,
+        "f1": 1.0,
+        "support_agreement": 0.0
+      }
+    }
+  ],
+  "best": null,
+  "selection": {
+    "max_seconds": null,
+    "min_patterns": 1,
+    "recall_threshold": 0.95
+  }
+}

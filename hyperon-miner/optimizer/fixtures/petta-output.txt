@@ -1,0 +1,8 @@
+"==== Pattern Miner Started ====="
+OPTIMIZER_RESULTS_BEGIN
+(supportOf (Inheritance $first human) 4)
+(surprisingnessOf (Inheritance $renamed human) 0.75)
+(supportOf (, (Inheritance $_0 $_1) (Inheritance $_0 $_2)) 21)
+(supportOf (, (Inheritance $entity $kind) (Inheritance $other $kind)) 27)
+OPTIMIZER_RESULTS_END
+true

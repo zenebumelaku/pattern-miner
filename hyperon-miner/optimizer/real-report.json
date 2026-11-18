@@ -1,0 +1,43 @@
+{
+  "dataset": {
+    "path": "/Users/zeni/Desktop/projects/pattern/hyperon-miner/experiments/data/very-small-ugly.metta",
+    "atom_lines": 9,
+    "link_lines": 9,
+    "predicates": {
+      "Inheritance": 9
+    },
+    "distinct_symbols": 9,
+    "bytes": 266
+  },
+  "llm": {
+    "provider": "manual-config-file",
+    "path": "/Users/zeni/Desktop/projects/pattern/hyperon-miner/optimizer/manual-baseline.json"
+  },
+  "results": [
+    {
+      "config": {
+        "min_support": 1,
+        "depth": 0,
+        "mode": "none",
+        "normalization": "none",
+        "db_ratio": "none",
+        "conj_exp": false,
+        "init_pattern": "$x"
+      },
+      "status": "timeout",
+      "elapsed_seconds": 30.044376685000316,
+      "peak_memory_mb": null,
+      "pattern_count": 0,
+      "support_values": [],
+      "surprisingness_values": [],
+      "stdout": "\u001b[33m--> metta runnable  -->\n\u001b[36m!(import! &self experiments/utils/surp-utils/boost_petta.py)\n\u001b[33m-->  prolog goal  -->\u001b[35m \n:- findall(A,\n           'import!'('&self', 'experiments/utils/surp-utils/boost_petta.py', A),\n           _).\n\u001b[33m^^^^^^^^^^^^^^^^^^^^^^^\n",
+      "stderr": "",
+      "error": "timeout"
+    }
+  ],
+  "best": null,
+  "selection": {
+    "max_seconds": null,
+    "min_patterns": 1
+  }
+}

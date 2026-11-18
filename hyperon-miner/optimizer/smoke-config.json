@@ -1,0 +1,11 @@
+[
+  {
+    "min_support": 3,
+    "depth": 0,
+    "mode": "none",
+    "normalization": "none",
+    "db_ratio": "none",
+    "conj_exp": true,
+    "init_pattern": "$x"
+  }
+]

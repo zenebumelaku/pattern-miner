@@ -1,0 +1,35 @@
+{
+  "dataset_hash": "4afb8ea5445051e61a9dec7d85e3106f722ca6635db9f83a73155e907549f7db",
+  "miner_version": "sha256-ab922c36ed12f2d79b98332875b6a3a299dd98bef60d5954c12314e793bed404",
+  "config": {
+    "min_support": 1,
+    "depth": 0,
+    "mode": "none",
+    "normalization": "none",
+    "db_ratio": "none",
+    "conj_exp": false,
+    "init_pattern": "$x"
+  },
+  "result": {
+    "config": {
+      "min_support": 1,
+      "depth": 0,
+      "mode": "none",
+      "normalization": "none",
+      "db_ratio": "none",
+      "conj_exp": false,
+      "init_pattern": "$x"
+    },
+    "status": "ok",
+    "elapsed_seconds": 0.5742630469994765,
+    "peak_memory_mb": 18.76953125,
+    "pattern_count": 0,
+    "support_values": [],
+    "surprisingness_values": [],
+    "stdout": "[(Error (import! ModuleSpace(GroundingSpace-top) experiments/utils/common-utils) Illegal module name: experiments/utils/common-utils)]\n",
+    "stderr": "",
+    "error": null,
+    "patterns": [],
+    "comparison": null
+  }
+}
