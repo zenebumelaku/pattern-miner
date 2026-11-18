@@ -13,7 +13,9 @@ import json
 import os
 import re
 import resource
+import random
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.request
@@ -76,6 +78,7 @@ class RunResult:
     stdout: str
     stderr: str
     error: str | None = None
+    patterns: list[str] | None = None
 
 
 def analyze_dataset(path: Path) -> DatasetProfile:
@@ -188,6 +191,21 @@ def parse_results(output: str, result_section_only: bool = False) -> tuple[int, 
     return count, support, surprise
 
 
+def parse_pattern_set(output: str) -> list[str]:
+    if RESULT_BEGIN in output:
+        output = output.split(RESULT_BEGIN, 1)[1]
+    patterns: list[str] = []
+    for match in re.finditer(
+        r"\(supportOf\s+(.+?)\s+[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?\d+)?\)",
+        output,
+        re.DOTALL,
+    ):
+        pattern = re.sub(r"\s+", " ", match.group(1)).strip()
+        if pattern:
+            patterns.append(pattern)
+    return sorted(set(patterns))
+
+
 def run_miner(repo: Path, petta: str, dataset: Path, config: Config,
               timeout: int, petta_venv: Path | None = None) -> RunResult:
     errors = validate_config(config, analyze_dataset(dataset))
@@ -208,10 +226,12 @@ def run_miner(repo: Path, petta: str, dataset: Path, config: Config,
         # macOS reports bytes; Linux reports KiB.
         multiplier = 1 / (1024 * 1024) if os.uname().sysname == "Darwin" else 1 / 1024
         count, support, surprise = parse_results(proc.stdout + "\n" + proc.stderr, True)
+        patterns = parse_pattern_set(proc.stdout + "\n" + proc.stderr)
         return RunResult(asdict(config), "ok" if proc.returncode == 0 else "failed",
                          elapsed, max(0.0, after - before) * multiplier, count,
                          support, surprise, proc.stdout, proc.stderr,
-                         None if proc.returncode == 0 else f"exit code {proc.returncode}")
+                         None if proc.returncode == 0 else f"exit code {proc.returncode}",
+                         patterns if proc.returncode == 0 else [])
     except subprocess.TimeoutExpired as exc:
         return RunResult(asdict(config), "timeout", time.perf_counter() - started, None,
                          0, [], [], _text(exc.stdout), _text(exc.stderr), "timeout")
@@ -250,6 +270,7 @@ def llm_candidates(profile: DatasetProfile, previous: list[RunResult], limit: in
     request = urllib.request.Request(
         os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1/chat/completions"),
         data=body, headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+    request.add_header("Authorization", "Bearer " + key)
     try:
         with urllib.request.urlopen(request, timeout=45) as response:
             payload = json.load(response)
@@ -269,7 +290,182 @@ def select_best(results: list[RunResult], max_seconds: float | None, min_pattern
     return min(eligible, key=lambda r: (r.elapsed_seconds, -max(r.surprisingness_values or [0]))) if eligible else None
 
 
+def random_candidates(profile: DatasetProfile, limit: int, seed: int) -> list[Config]:
+    rng = random.Random(seed)
+    upper = max(1, profile.atom_lines)
+    candidates: list[Config] = []
+    seen: set[tuple[int, int]] = set()
+    while len(candidates) < limit:
+        support = rng.randint(1, upper)
+        depth = rng.randint(0, 1)
+        key = (support, depth)
+        if key not in seen:
+            seen.add(key)
+            candidates.append(Config(support, depth, conj_exp=(depth > 0)))
+    return candidates
+
+
+def optuna_candidates(profile: DatasetProfile, limit: int, seed: int,
+                      repo: Path, petta: str, dataset: Path, timeout: int,
+                      petta_venv: Path | None) -> tuple[list[Config], dict[str, Any]]:
+    try:
+        import optuna
+    except ImportError:
+        return deterministic_candidates(profile, limit), {
+            "provider": "fallback-after-optuna-unavailable",
+            "fallback_count": 1,
+        }
+
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+    sampler = optuna.samplers.TPESampler(seed=seed)
+    study = optuna.create_study(direction="minimize", sampler=sampler)
+
+    def objective(trial: Any) -> float:
+        upper = max(1, profile.atom_lines)
+        support = trial.suggest_int("min_support", 1, upper)
+        depth = trial.suggest_int("depth", 0, 1)
+        config = Config(support, depth, conj_exp=(depth > 0))
+        result = run_miner(repo, petta, dataset, config, timeout, petta_venv)
+        trial.set_user_attr("config", asdict(config))
+        trial.set_user_attr("status", result.status)
+        if result.status == "ok" and result.pattern_count > 0:
+            return result.elapsed_seconds
+        return float(timeout * 100)
+
+    study.optimize(objective, n_trials=limit)
+    configs = [
+        Config(**trial.user_attrs["config"])
+        for trial in study.trials
+        if "config" in trial.user_attrs
+    ]
+    return configs[:limit], {
+        "provider": "optuna",
+        "seed": seed,
+        "fallback_count": 0,
+    }
+
+
+def recall_fraction(reference: list[str], candidate: list[str]) -> float:
+    if not reference:
+        return 1.0 if not candidate else 0.0
+    return len(set(reference).intersection(candidate)) / len(set(reference))
+
+
+def experiment_main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="prototype.py experiment",
+        description="Run small baseline and candidate-selection experiments.",
+    )
+    parser.add_argument("--repo", type=Path, default=Path(__file__).parents[1])
+    parser.add_argument("--dataset", type=Path, required=True)
+    parser.add_argument("--petta", default=os.environ.get("PETTA", "petta"))
+    parser.add_argument("--petta-venv", type=Path)
+    parser.add_argument("--trials", type=int, default=3)
+    parser.add_argument("--timeout", type=int, default=60)
+    parser.add_argument("--seeds", type=int, nargs="+", default=[11, 22, 33])
+    parser.add_argument("--methods", nargs="+",
+                        choices=["default", "random", "optuna", "deterministic", "llm-warmstart"],
+                        default=["default", "random", "optuna", "deterministic", "llm-warmstart"])
+    parser.add_argument("--recall-threshold", type=float, default=1.0)
+    parser.add_argument("--mock-llm", action="store_true")
+    parser.add_argument("--llm-mode", choices=["warmstart"], default="warmstart")
+    parser.add_argument("--output", type=Path, default=Path("experiment-report.json"))
+    args = parser.parse_args(argv)
+
+    repo, dataset = args.repo.resolve(), args.dataset.resolve()
+    profile = analyze_dataset(dataset)
+    reference = run_miner(
+        repo, args.petta, dataset, Config(1, 0, conj_exp=False),
+        args.timeout, args.petta_venv,
+    )
+    reference_patterns = set(reference.patterns or [])
+
+    method_reports: dict[str, Any] = {}
+    fallback_count = 0
+    for method in args.methods:
+        seed_reports: list[dict[str, Any]] = []
+        for seed in args.seeds:
+            llm_metadata: dict[str, Any] = {"provider": "none"}
+            if method == "default":
+                configs = [Config(3, 0, conj_exp=True)]
+            elif method == "random":
+                configs = random_candidates(profile, args.trials, seed)
+            elif method == "optuna":
+                configs, llm_metadata = optuna_candidates(
+                    profile, args.trials, seed, repo, args.petta, dataset,
+                    args.timeout, args.petta_venv,
+                )
+            elif method == "deterministic":
+                configs = deterministic_candidates(profile, args.trials)
+                llm_metadata = {"provider": "deterministic-fallback", "fallback_count": 1}
+            else:
+                if args.mock_llm or not os.environ.get("OPENAI_API_KEY"):
+                    configs = deterministic_candidates(profile, args.trials)
+                    llm_metadata = {
+                        "provider": "MOCK - deterministic no-key fallback",
+                        "fallback_count": 1,
+                        "real_llm": False,
+                    }
+                else:
+                    configs, llm_metadata = llm_candidates(profile, [], args.trials)
+                    llm_metadata["real_llm"] = True
+
+            results = [
+                run_miner(repo, args.petta, dataset, config, args.timeout, args.petta_venv)
+                for config in configs
+            ]
+            eligible = []
+            for result in results:
+                if result.status != "ok":
+                    continue
+                recall = recall_fraction(
+                    sorted(reference_patterns),
+                    result.patterns or [],
+                )
+                if recall >= args.recall_threshold:
+                    eligible.append((result, recall))
+            best = min(eligible, key=lambda item: item[0].elapsed_seconds) if eligible else None
+            fallback_count += llm_metadata.get("fallback_count", 0)
+            seed_reports.append({
+                "seed": seed,
+                "llm": llm_metadata,
+                "results": [asdict(result) for result in results],
+                "best": asdict(best[0]) if best else None,
+                "best_recall": best[1] if best else None,
+                "fallback_count": llm_metadata.get("fallback_count", 0),
+            })
+        method_reports[method] = {
+            "seeds": seed_reports,
+            "valid_config_rate": sum(
+                1 for seed_report in seed_reports
+                for result in seed_report["results"]
+                if validate_config(Config(**result["config"]), profile) == []
+            ) / max(1, sum(len(seed_report["results"]) for seed_report in seed_reports)),
+        }
+
+    report = {
+        "dataset": asdict(profile),
+        "trials": args.trials,
+        "timeout": args.timeout,
+        "seeds": args.seeds,
+        "recall_threshold": args.recall_threshold,
+        "reference": asdict(reference),
+        "methods": method_reports,
+        "fallback_count": fallback_count,
+    }
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    print(json.dumps({
+        "output": str(args.output),
+        "reference_status": reference.status,
+        "methods": list(method_reports),
+    }, indent=2))
+    return 0
+
+
 def main() -> int:
+    if len(sys.argv) > 1 and sys.argv[1] == "experiment":
+        return experiment_main(sys.argv[2:])
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", type=Path, default=Path(__file__).parents[1])
     parser.add_argument("--dataset", type=Path, required=True)
@@ -306,4 +502,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

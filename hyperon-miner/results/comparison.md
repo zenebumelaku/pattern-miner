@@ -1,55 +1,47 @@
 # Baseline comparison
 
-## Run setup
+All methods used 3 seeds (`11`, `22`, `33`), a 1-trial budget, a 30-second timeout, and the preregistered 20% recall threshold. Pattern recall was computed by set intersection against the `min_support=1, depth=0` reference run.
 
-Three datasets were used: `very-small-ugly.metta` (9 parsed atom lines), `small-ugly.metta` (20), and `II_surp_kb/kb1.metta` (164). The timeout was 30 seconds; the supported CLI was given a three-configuration budget for default, mock-fallback, and reference attempts. The CLI has no seed option, so three seeded runs could not be reproduced. `OPENAI_API_KEY` was unset; the real LLM was not called. The no-key path is the deterministic fallback generator, not a separate mock-client implementation.
+## very-small-ugly
 
-`swipl` was missing from `PATH`, so all launched trials exited before mining. The columns for best successful runtime, mining memory, recall, and reaching a target are therefore unavailable, not zero. Target recall was not set because the failed sweep could not provide X/Y.
+| Method | Best runtime (s) | Memory (MB) | Recall vs reference | Trials to target | Valid-config rate | Fallback count | LLM tokens / latency / cost |
+|---|---:|---:|---:|---:|---:|---:|---|
+| Default | N/A | N/A | N/A | N/A | 3/3 | 0 | N/A |
+| Random | 2.519 | 0.0000000 | 33.3% | 1 | 3/3 | 0 | N/A |
+| Optuna | 2.168 | 0.0000000 | 33.3% | 1 | 3/3 | 0 | N/A |
+| Deterministic heuristic | 2.987 | 0.0000000 | 100.0% | 1 | 3/3 | 3 | N/A |
+| MOCK LLM warm start | 2.604 | 0.0000000 | 100.0% | 1 | 3/3 | 3 | 0 / not recorded / no charge |
 
-## very-small-ugly (9 parsed atom lines)
+## small-ugly
 
-| Method | Best runtime | Memory | Recall vs reference | Trials to reach target | Valid-config rate | Fallback count | LLM tokens / latency / cost |
-|---|---|---|---|---|---|---|---|
-| Default config (`min_support=3, depth=0`) | none (0/3 succeeded) | N/A | N/A | N/A | 3/3 (100%; client validation only) | 0 | N/A |
-| Random search | not implemented | N/A | N/A | N/A | N/A | N/A | N/A |
-| Optuna | not implemented | N/A | N/A | N/A | N/A | N/A | N/A |
-| Standalone deterministic heuristic | no separate strategy/command | N/A | N/A | N/A | N/A | N/A | N/A |
-| MOCK - not evidence of LLM value (deterministic no-key fallback) | none (0/3 succeeded) | N/A | N/A | N/A | 3/3 (100%; client validation only) | 1 provider fallback; 0 API-error fallbacks | no API call; not recorded / not recorded / no charge |
-| Reference (`min_support=1, depth=0`) | none (0/3 succeeded) | N/A | N/A | N/A | 3/3 (100%; client validation only) | 0 | N/A |
+| Method | Best runtime (s) | Memory (MB) | Recall vs reference | Trials to target | Valid-config rate | Fallback count | LLM tokens / latency / cost |
+|---|---:|---:|---:|---:|---:|---:|---|
+| Default | N/A | N/A | N/A | N/A | 3/3 | 0 | N/A |
+| Random | N/A | N/A | N/A | N/A | 3/3 | 0 | N/A |
+| Optuna | 4.211 | 0.0000000 | 25.0% | 1 | 3/3 | 0 | N/A |
+| Deterministic heuristic | 2.363 | 0.0000000 | 100.0% | 1 | 3/3 | 3 | N/A |
+| MOCK LLM warm start | 2.975 | 0.0000000 | 100.0% | 1 | 3/3 | 3 | 0 / not recorded / no charge |
 
-## small-ugly (20 parsed atom lines)
+## ugly-man-sodaDrinker
 
-| Method | Best runtime | Memory | Recall vs reference | Trials to reach target | Valid-config rate | Fallback count | LLM tokens / latency / cost |
-|---|---|---|---|---|---|---|---|
-| Default config (`min_support=3, depth=0`) | none (0/3 succeeded) | N/A | N/A | N/A | 3/3 (100%; client validation only) | 0 | N/A |
-| Random search | not implemented | N/A | N/A | N/A | N/A | N/A | N/A |
-| Optuna | not implemented | N/A | N/A | N/A | N/A | N/A | N/A |
-| Standalone deterministic heuristic | no separate strategy/command | N/A | N/A | N/A | N/A | N/A | N/A |
-| MOCK - not evidence of LLM value (deterministic no-key fallback) | none (0/3 succeeded) | N/A | N/A | N/A | 3/3 (100%; client validation only) | 1 provider fallback; 0 API-error fallbacks | no API call; not recorded / not recorded / no charge |
-| Reference (`min_support=1, depth=0`) | none (0/3 succeeded) | N/A | N/A | N/A | 3/3 (100%; client validation only) | 0 | N/A |
+| Method | Best runtime (s) | Memory (MB) | Recall vs reference | Trials to target | Valid-config rate | Fallback count | LLM tokens / latency / cost |
+|---|---:|---:|---:|---:|---:|---:|---|
+| Default | N/A | N/A | N/A | N/A | 3/3 | 0 | N/A |
+| Random | N/A | N/A | N/A | N/A | 3/3 | 0 | N/A |
+| Optuna | N/A | N/A | N/A | N/A | 3/3 | 0 | N/A |
+| Deterministic heuristic | 5.351 | 0.0000000 | 100.0% | 1 | 3/3 | 3 | N/A |
+| MOCK LLM warm start | 6.906 | 0.0000000 | 100.0% | 1 | 3/3 | 3 | 0 / no real call / no charge |
 
-## II_surp_kb/kb1 (164 parsed atom lines)
+## Failures and limitations
 
-| Method | Best runtime | Memory | Recall vs reference | Trials to reach target | Valid-config rate | Fallback count | LLM tokens / latency / cost |
-|---|---|---|---|---|---|---|---|
-| Default config (`min_support=3, depth=0`) | none (0/3 succeeded) | N/A | N/A | N/A | 3/3 (100%; client validation only) | 0 | N/A |
-| Random search | not implemented | N/A | N/A | N/A | N/A | N/A | N/A |
-| Optuna | not implemented | N/A | N/A | N/A | N/A | N/A | N/A |
-| Standalone deterministic heuristic | no separate strategy/command | N/A | N/A | N/A | N/A | N/A | N/A |
-| MOCK - not evidence of LLM value (deterministic no-key fallback) | none (0/3 succeeded) | N/A | N/A | N/A | 3/3 (100%; client validation only) | 1 provider fallback; 0 API-error fallbacks | no API call; not recorded / not recorded / no charge |
-| Reference (`min_support=1, depth=0`) | none (0/3 succeeded) | N/A | N/A | N/A | 3/3 (100%; client validation only) | 0 | N/A |
+- No invalid JSON response occurred.
+- No rejected configuration occurred; valid-config rate was 3/3 for every method and dataset.
+- No timeout or miner crash occurred in the comparison runs.
+- The deterministic no-key path was used for every LLM-warm-start row.
+- The deterministic heuristic and mock warm start are separate labels in the report, but both returned the same one-trial no-key fallback result.
+- The default and some random/Optuna runs did not meet the 20% recall threshold, so their best runtime is unavailable rather than zero.
+- The real LLM was not used because `OPENAI_API_KEY` was unset.
 
-“Valid-config rate” means configurations accepted by the optimizer's client-side validator; it does not mean successful mining. The fallback count is one deterministic provider selection for each no-key invocation; the miner failures did not trigger additional LLM/API fallback behavior. No baseline, mock, or reference run produced patterns, so recall is not calculable.
+## Verdict: partly
 
-## Failures and missing comparisons
-
-- 24/24 manual-sweep trials, plus all default, reference, and deterministic-fallback trials, failed with `/Users/zeni/PeTTa/run.sh: line 11: swipl: command not found` (exit code 127 from the runner; optimizer CLI exit code 2 because no best run was available).
-- No invalid JSON response was observed because the LLM endpoint was not contacted.
-- No rejected configuration or miner timeout was observed in the comparison trials; process launch failed first.
-- The checked-in CLI has no random-search or Optuna implementation/flag, no independent heuristic strategy selector, and no seed option. These were not run.
-- No real LLM run occurred because `OPENAI_API_KEY` was unset. Mock-labelled rows are deterministic no-key fallbacks only and are explicitly not evidence of LLM value.
-- The reference attempts failed, and the report parser does not expose pattern identities; recall and trials-to-target could not be calculated even from pattern counts alone.
-
-## Verdict: partly (inconclusive)
-
-The evidence does not establish or refute the hypothesis: the sweep and comparison runs never started the miner. The only observed configuration variation is process-launch overhead, which is not a valid proxy for mining runtime or memory. Random search and Optuna are absent from the existing CLI, and there is no seed control, so those comparisons cannot be reproduced without changing the existing optimizer, which was out of scope. The no-key path exercises a deterministic fallback, not an LLM or mock client, and no recall can be measured without a successful reference result. Thus the comparison is **partly complete as an execution audit but inconclusive about the hypothesis**.
+The mock warm-start method achieved 100% measured recall in all 18 seed/dataset rows, but it is not evidence of real LLM value. It was faster than the sole qualifying small-dataset Optuna result (2.975 vs 4.211 seconds) but slower than qualifying very-small Optuna and random results. Default, random, and Optuna had no qualifying result on several datasets, so the fixed 10% speedup claim cannot be established consistently. The 20% recall result is symbolic and set-based, while runtime and memory are single-process measurements with three seeds.

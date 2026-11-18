@@ -11,8 +11,10 @@ from pathlib import Path
 from prototype import (
     Config,
     analyze_dataset,
+    experiment_main,
     llm_candidates,
     make_script,
+    parse_pattern_set,
     parse_results,
     run_miner,
     select_best,
@@ -25,6 +27,19 @@ DATASET = REPO / "experiments" / "data" / "very-small-ugly.metta"
 
 
 class PrototypeTests(unittest.TestCase):
+    def test_pattern_set_parser_extracts_unique_support_patterns(self):
+        output = """
+        OPTIMIZER_RESULTS_BEGIN
+        (supportOf (Inheritance $x ugly) 21)
+        (supportOf (Inheritance $x man) 27)
+        (supportOf (Inheritance $x ugly) 21)
+        OPTIMIZER_RESULTS_END
+        """
+        self.assertEqual(parse_pattern_set(output), [
+            "(Inheritance $x man)",
+            "(Inheritance $x ugly)",
+        ])
+
     def test_dataset_analysis_and_validation(self):
         profile = analyze_dataset(DATASET)
         self.assertEqual(profile.atom_lines, 9)

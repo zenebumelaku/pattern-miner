@@ -2,39 +2,46 @@
 
 ```mermaid
 flowchart TD
-    U[CLI arguments: dataset, trials, timeout, runner] --> P[Dataset profiler]
-    P --> C{Config source}
-    C -->|config file| M[Manual configurations]
-    C -->|no config file| K{OPENAI_API_KEY set?}
-    K -->|yes| L[OpenAI-compatible chat endpoint]
-    K -->|no| D[Deterministic candidate fallback]
-    L -->|JSON parameter set only| J[JSON decoder]
-    J --> V[Configuration validator]
-    M --> V
-    D --> V
-    V -->|invalid| I[Invalid result]
-    V -->|valid| G[Generate temporary MeTTa runner script]
-    G --> R[Launch PeTTa subprocess]
-    R -->|stdout/stderr markers| O[Parse support/surprisingness and count]
-    R -->|timeout / OS error / nonzero exit| F[Failure result]
-    O --> S[Select best eligible result]
-    I --> S
-    F --> S
-    S --> W[Write JSON report]
+  A[CLI arguments and dataset] --> B[Dataset profiler]
+  B --> C{Experiment method}
+  C -->|default| D[Config min_support=3 depth=0]
+  C -->|random| E[Seeded random configs]
+  C -->|optuna| F[Optuna trials]
+  C -->|deterministic| G[Deterministic fallback configs]
+  C -->|LLM warm start| H[LLM or mock proposal]
+  D --> V[Configuration validator]
+  E --> V
+  F --> V
+  G --> V
+  H --> V
+  V -->|valid| S[Generate temporary MeTTa script]
+  V -->|invalid| I[Invalid recorded trial]
+  S --> P[Launch PeTTa with SWI-Prolog]
+  P -->|success| R[Parse pattern count, support, and pattern identity]
+  P -->|timeout or crash| T[Record timeout or failed trial]
+  R --> Cmp[Recall vs reference pattern set]
+  I --> Cmp
+  T --> Cmp
+  Cmp --> J[Write JSON experiment report]
 ```
 
-## Components and data flow
+## Components
 
-- **CLI (`optimizer/prototype.py`)** accepts a dataset, PeTTa executable, optional Python 3.11 venv, trial limit, timeout, optional manual JSON config list, and output path.
-- **Profiler** counts parsed atom/link lines, predicates, symbols, and bytes. The profile accompanies LLM proposal input and config validation.
-- **Configuration source** is either a JSON file or the proposal function. With `OPENAI_API_KEY`, the HTTP endpoint receives the dataset profile, previous runs, schema, and an instruction to return configurations. Without the key, deterministic candidates are returned.
-- **LLM boundary**: the model is asked to return JSON configurations only. Its response is parsed into `Config` parameter sets; patterns remain the miner's output and are not requested from the LLM.
-- **Validator** checks support/depth ranges, supported modes, normalization and database-ratio combinations, and the relationship between depth and conjunction expansion.
-- **Runner** substitutes dataset and parameter values into a temporary MeTTa script, launches PeTTa, and records elapsed time, child-process memory delta, stdout/stderr, status, and parsed pattern/support metrics.
-- **Selector/reporter** filters to successful runs meeting `min_patterns` and optional time limit, selects the fastest eligible result, and writes the JSON report.
+- Dataset profiler: atom lines, link lines, predicates, symbols, and bytes.
+- Configuration validator: support range, depth, supported mode fields, and conjunction-expansion requirements.
+- Runner: substitutes parameters into the existing miner script and launches PeTTa.
+- Experiment layer: default, seeded random, Optuna, deterministic fallback, and LLM/mock warm start.
+- Reporter: records configuration, status, runtime, memory, pattern count, pattern identities, recall, and fallback metadata.
+
+## Data flow
+
+The CLI profiles one dataset and proposes configurations. Each valid configuration produces a temporary MeTTa script. The existing PeTTa runner executes the symbolic miner and stdout is parsed into metrics and pattern identities. The experiment report compares candidate pattern sets with the `min_support=1, depth=0` reference.
 
 ## Control flow and failure path
 
-An invalid configuration becomes an `invalid` result without launching PeTTa. A subprocess timeout yields `timeout`; an OS launch error or nonzero runner exit yields `failed`. An HTTP/JSON/proposal exception in the LLM path is caught and converted into deterministic proposals with fallback metadata. The CLI writes a report and exits with status 2 when no eligible best run exists.
-
-In the recorded attempts, control reached the PeTTa shell script, which could not find `swipl`; each miner trial therefore produced a `failed` result before parsing any patterns. The repository's current CLI has no random-search, Optuna, reference-recall, or seed-control component.
+- Missing API key: deterministic fallback.
+- Mock mode: deterministic fallback labeled as MOCK.
+- LLM error or invalid JSON: existing code records fallback metadata and uses deterministic candidates.
+- Invalid configuration: recorded as invalid without launching PeTTa.
+- Miner timeout or nonzero process exit: recorded as timeout or failed.
+- The LLM receives only dataset summary statistics and prior-run metadata. It is instructed to return JSON parameter sets only and never pattern identities or mined results.

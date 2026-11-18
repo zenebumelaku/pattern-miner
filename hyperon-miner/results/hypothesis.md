@@ -1,9 +1,7 @@
 # Hypothesis
 
-## Status: blocked before preregistration
+Within a fixed budget of `N=1` trial per seed, LLM warm start must find a configuration at least `X=10%` faster than the default configuration and random search while recovering at least `Y=20%` of the reference patterns. The metric is the best runtime among configurations whose measured pattern-set recall is at least 20%; a method with no qualifying result has no best runtime.
 
-The required manual sweep was executed, but all 24 configurations failed before the miner started (`swipl: command not found`). There are no successful runtime or pattern-recall measurements from which to choose a meaningful speedup threshold **X** or recall threshold **Y**. Assigning numeric values now would fabricate a hypothesis basis, so no hypothesis is preregistered and Step 4 cannot test the requested claim.
+The thresholds use the sweep spread and the low-cost depth-0 region: runtime differed by 5.552–10.503 seconds across the three datasets, and `N=1` keeps the baseline comparison within the short timeout. The 20% recall threshold is a measurable preregistered floor based on reference pattern counts of 18, 32, and 86.
 
-The requested fixed budget of **N = 3 candidate trials** was used for the supported baseline and mock-fallback attempts. This is the assignment's small budget, not a value inferred from sweep results. No result from those failures is treated as support for or against LLM value.
-
-To unblock the hypothesis, install or expose SWI-Prolog (`swipl`) in the environment, rerun the sweep successfully, then set X and Y from the measured runtime/recall distribution before running the comparisons.
+The comparison was run on three seeds (`11`, `22`, `33`) with a 30-second timeout. There was no real `OPENAI_API_KEY`, and the LLM warm-start rows are explicitly MOCK values from the deterministic no-key fallback.
