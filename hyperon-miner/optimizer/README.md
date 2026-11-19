@@ -206,9 +206,9 @@ is a coverage enhancement with a documented runtime trade-off.
 - [x] Every reported live configuration executed by PeTTa.
 - [x] Coverage gate and comparison artifacts updated.
 - [x] JSON artifacts parse successfully and editor diagnostics report no Python errors.
-- [ ] Re-run the 20-test suite after repairing the local Python 3.11 virtual environment.
-- [ ] Omit generated `__pycache__/`, `live-run/`, and stale root-level smoke or
-  experiment reports unless the submission explicitly requires them.
+- [x] Re-ran the 20-test suite after repairing the local Python 3.11 virtual environment: 20 passed.
+- [x] Omitted generated `__pycache__/`, `live-run/`, stale root-level smoke or
+  experiment reports, and the superseded historical live JSON.
 
 ## Miner configuration
 
