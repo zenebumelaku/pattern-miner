@@ -188,7 +188,8 @@ class PrototypeTests(unittest.TestCase):
         self.assertNotIn("private pattern", request_text)
         self.assertNotIn("private miner output", request_text)
         self.assertNotIn("private miner error", request_text)
-        self.assertIn("maximize pattern recall first", prompt_text)
+        self.assertIn("improve mining coverage", prompt_text)
+        self.assertIn("minimize runtime as a secondary goal", prompt_text)
         self.assertIn('"depth": 0', prompt_text)
         self.assertIn('"conj_exp": false', prompt_text)
         self.assertEqual(
