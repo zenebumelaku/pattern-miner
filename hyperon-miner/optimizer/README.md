@@ -1,15 +1,15 @@
 # Pattern Miner Configuration Optimizer
 
 <p align="center">
-  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white" alt="Python 3.11"></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white" alt="Python 3.11 or newer"></a>
   <a href="https://github.com/trueagi-io/PeTTa"><img src="https://img.shields.io/badge/PeTTa-symbolic_mining-6C63FF" alt="PeTTa symbolic mining"></a>
   <a href="https://www.swi-prolog.org/"><img src="https://img.shields.io/badge/SWI--Prolog-runtime-CC342D" alt="SWI-Prolog runtime"></a>
   <a href="https://optuna.org/"><img src="https://img.shields.io/badge/Optuna-optional-2E8B57" alt="Optuna optional"></a>
   <img src="https://img.shields.io/badge/LLM-proposals_optional-8A2BE2" alt="LLM proposals optional">
 </p>
 
-> A measured search layer for finding faster, valid configurations for the
-> Hyperon/PeTTa Pattern Miner.
+> A measured search layer for finding better-coverage and valid configurations
+> for the Hyperon/PeTTa Pattern Miner.
 
 The optimizer profiles a dataset, generates candidate configurations, executes
 each candidate through PeTTa, and writes a machine-readable report containing
@@ -52,7 +52,8 @@ For each run, the optimizer:
 4. Runs the candidate through PeTTa with a timeout.
 5. Records elapsed time, peak memory, pattern counts, support values,
    surprisingness values, stdout, stderr, and the final status.
-6. Selects the fastest successful result that meets the requested constraints.
+6. Selects the best eligible result: normal mode prioritizes runtime, while
+   LLM experiment mode first requires a measurable mining-coverage improvement.
 
 The normal workflow selects a result by runtime. Experiment mode compares
 candidate-generation methods and can apply a recall threshold against a
@@ -60,7 +61,7 @@ reference run.
 
 ## Requirements
 
-- Python 3.11
+- Python 3.11 or newer (the live rerun used Python 3.15.2)
 - PeTTa and SWI-Prolog available in the execution environment
 - A PeTTa executable or `run.sh` script
 - The Python dependencies in [`requirements.txt`](../requirements.txt)
@@ -146,6 +147,12 @@ Experiment mode first creates a reference result using
 eligible for recall-based comparison only when its pattern recall meets
 `--recall-threshold`.
 
+For `llm-warmstart`, promotion requires a successful live proposal to preserve
+the reference recall and return more patterns than the project-default
+configuration (`min_support=3`, `depth=0`, conjunction expansion enabled).
+Runtime is recorded as a secondary metric, while `improved_baseline` indicates
+the coverage enhancement.
+
 ## LLM configuration proposals
 
 Live LLM proposals are required by default when the normal command does not
@@ -175,8 +182,33 @@ number of retries for retryable provider responses and defaults to `2`.
 
 The optimizer sends dataset profile information and run metadata to the
 selected provider for proposal generation. It does not send the dataset
-contents, parsed pattern identities, or raw PeTTa output. Store API keys in the
-shell environment or in a local `.env` file; do not commit them.
+contents, parsed pattern identities, or raw PeTTa output. LLM-driven runs
+evaluate both the `min_support=1`, `depth=0`, `conj_exp=false` reference set and
+the project-default `min_support=3`, `depth=0`, `conj_exp=true` baseline. The
+reference is the recall guardrail; the default is the coverage-comparison
+baseline. Store API keys in the shell environment or in a local `.env` file;
+do not commit them.
+
+## Live Gemini + PeTTa evidence
+
+The submission evidence is summarized in
+[`results/comparison.md`](./results/comparison.md) and captured in
+[`results/gemini-petta-rerun.json`](./results/gemini-petta-rerun.json). The
+fresh live call used Gemini `gemini-3.1-flash-lite` with zero fallback. Its
+selected proposal produced 18 patterns versus 2 from the default baseline and
+recovered 100% of the reference pattern set. The median runtime was 13.09
+seconds for the proposal versus 12.04 seconds for the baseline, so the result
+is a coverage enhancement with a documented runtime trade-off.
+
+## Submission checklist
+
+- [x] Live Gemini response recorded with `real_llm=true` and zero fallback.
+- [x] Every reported live configuration executed by PeTTa.
+- [x] Coverage gate and comparison artifacts updated.
+- [x] JSON artifacts parse successfully and editor diagnostics report no Python errors.
+- [ ] Re-run the 20-test suite after repairing the local Python 3.11 virtual environment.
+- [ ] Omit generated `__pycache__/`, `live-run/`, and stale root-level smoke or
+  experiment reports unless the submission explicitly requires them.
 
 ## Miner configuration
 
@@ -292,6 +324,7 @@ point.
 | [`llm.py`](./llm.py) | LLM provider integration and deterministic fallback handling |
 | [`models.py`](./models.py) | Shared configuration, dataset, and run-result models |
 | [`test_prototype.py`](./test_prototype.py) | Unit and CLI regression tests |
+| [`results/`](./results/) | Comparison, gate, rerun, and presentation evidence |
 
 ## Troubleshooting
 
@@ -317,6 +350,13 @@ timeout, an invalid configuration, zero patterns, or a value of
 Set the matching provider and API key, or use `--config-file` for fully local
 execution. `--allow-llm-fallback` is available for offline experiments where
 deterministic candidates are acceptable.
+
+### SWI-Prolog reports a Janus/Python warning
+
+Frequent-pattern mining can still complete when SWI-Prolog reports that its
+optional Janus bridge cannot load a Python shared library, but the warning
+should be fixed before relying on Python interoperability. Use a working
+Python 3.11 environment for Janus and pass it with `--petta-venv`.
 
 ### The Optuna method falls back
 

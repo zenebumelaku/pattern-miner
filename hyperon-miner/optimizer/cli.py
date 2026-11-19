@@ -21,7 +21,22 @@ from typing import Any
 from .llm import configured_llm_provider, llm_candidates
 from .miner import analyze_dataset, deterministic_candidates, run_miner, validate_config
 from .models import Config
-from .search import optuna_candidates, random_candidates, recall_fraction, select_best
+from .search import (
+    optuna_candidates,
+    random_candidates,
+    recall_fraction,
+    select_best,
+    enhances_mining_over_baseline,
+)
+
+
+# Always evaluate the exact reference configuration alongside live LLM
+# proposals. A proposal can be syntactically valid yet silently lose most of
+# the patterns by increasing support or conjunction depth.
+def _with_recall_guardrail(configs: list[Config]) -> list[Config]:
+    reference = Config(1, 0, conj_exp=False)
+    default = Config(3, 0, conj_exp=True)
+    return list(dict.fromkeys([reference, default, *configs]))
 
 
 # Experiment-mode command: compare candidate-generation strategies.
@@ -70,6 +85,7 @@ def experiment_main(argv: list[str]) -> int:
         seed_reports: list[dict[str, Any]] = []
         for seed in args.seeds:
             llm_metadata: dict[str, Any] = {"provider": "none"}
+            llm_proposal_configs: set[Config] | None = None
             if method == "default":
                 configs = [Config(3, 0, conj_exp=True)]
             elif method == "random":
@@ -83,15 +99,19 @@ def experiment_main(argv: list[str]) -> int:
                 configs = deterministic_candidates(profile, args.trials)
                 llm_metadata = {"provider": "deterministic-baseline", "fallback_count": 0}
             else:
-                # The LLM supplies the initial candidate set for this method;
-                # the current experiment protocol does not feed prior miner
-                # results back into the proposal request.
+                # Give Gemini the measured reference metadata, then always
+                # evaluate the exact reference configuration as a guardrail.
                 configs, llm_metadata = llm_candidates(
                     profile,
-                    [],
+                    [reference],
                     args.trials,
                     require_live=not args.allow_llm_fallback,
                 )
+                llm_proposal_configs = set(configs)
+                configs = _with_recall_guardrail(configs)
+                llm_metadata["quality_guardrail"] = "reference-baseline-always-evaluated"
+                llm_metadata["quality_gate"] = "coverage-enhancement-over-default"
+                llm_metadata["baseline_config"] = asdict(Config(3, 0, conj_exp=True))
                 llm_metadata.setdefault(
                     "real_llm",
                     llm_metadata.get("provider") in {"gemini", "openai-compatible"},
@@ -101,6 +121,16 @@ def experiment_main(argv: list[str]) -> int:
                 run_miner(repo, args.petta, dataset, config, args.timeout, args.petta_venv)
                 for config in configs
             ]
+            default_baseline = next(
+                (
+                    result for result in results
+                    if Config(**result.config) == Config(3, 0, conj_exp=True)
+                ),
+                None,
+            )
+            if method == "llm-warmstart" and default_baseline is not None:
+                llm_metadata["baseline_elapsed_seconds"] = default_baseline.elapsed_seconds
+                llm_metadata["baseline_pattern_count"] = default_baseline.pattern_count
             eligible = []
             for result in results:
                 if result.status != "ok":
@@ -111,7 +141,38 @@ def experiment_main(argv: list[str]) -> int:
                 )
                 if recall >= args.recall_threshold:
                     eligible.append((result, recall))
-            best = min(eligible, key=lambda item: item[0].elapsed_seconds) if eligible else None
+            if method == "llm-warmstart":
+                proposal_eligible = [
+                    (result, recall)
+                    for result, recall in eligible
+                    if llm_proposal_configs
+                    and Config(**result.config) in llm_proposal_configs
+                    and Config(**result.config) != Config(3, 0, conj_exp=True)
+                    and default_baseline is not None
+                    and enhances_mining_over_baseline(
+                        result,
+                        default_baseline,
+                        recall,
+                        baseline_recall=recall_fraction(
+                            sorted(reference_patterns),
+                            default_baseline.patterns or [],
+                        ),
+                    )
+                ]
+                best = min(
+                    proposal_eligible,
+                    key=lambda item: item[0].elapsed_seconds,
+                ) if proposal_eligible else None
+                llm_metadata["improved_baseline"] = best is not None
+                if best is not None:
+                    llm_metadata["improvement_pattern_count"] = (
+                        best[0].pattern_count - default_baseline.pattern_count
+                    )
+                    llm_metadata["runtime_delta_seconds"] = (
+                        default_baseline.elapsed_seconds - best[0].elapsed_seconds
+                    )
+            else:
+                best = min(eligible, key=lambda item: item[0].elapsed_seconds) if eligible else None
             fallback_count += llm_metadata.get("fallback_count", 0)
             seed_reports.append({
                 "seed": seed,
@@ -189,6 +250,8 @@ def main() -> int:
             args.trials,
             require_live=not args.allow_llm_fallback,
         )
+        configs = _with_recall_guardrail(configs)
+        llm["quality_guardrail"] = "reference-baseline-always-evaluated"
     # Execute each candidate through the symbolic miner.
     results = [run_miner(repo, args.petta, dataset, config, args.timeout, args.petta_venv)
                for config in configs]

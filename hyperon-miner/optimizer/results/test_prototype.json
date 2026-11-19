@@ -1,0 +1,27 @@
+{
+  "artifact": "optimizer-regression-tests",
+  "source": "../test_prototype.py",
+  "command": ".venv/bin/python -m unittest discover -s optimizer -p 'test_*.py' -v",
+  "python": "3.15.2",
+  "summary": {
+    "status": "pending-rerun-python-environment-repair",
+    "previous_tests": 18,
+    "new_tests": 20,
+    "previous_passed": 18,
+    "previous_failed": 0,
+    "previous_errors": 0,
+    "previous_duration_seconds": 1.103
+  },
+  "new_regression": {
+    "names": [
+      "test_llm_promotion_requires_same_recall_and_lower_runtime",
+      "test_llm_mining_enhancement_requires_more_patterns_and_recall"
+    ],
+    "asserts": [
+      "same recall and lower runtime is accepted by the legacy speed helper",
+      "equal runtime is rejected by the legacy speed helper",
+      "lower recall is rejected",
+      "more patterns with preserved recall is accepted by the mining gate"
+    ]
+  }
+}

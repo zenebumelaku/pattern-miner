@@ -26,6 +26,8 @@ from prototype import (
     random_candidates,
     run_miner,
     select_best,
+    enhances_mining_over_baseline,
+    strictly_better_than_baseline,
     validate_config,
 )
 
@@ -180,11 +182,15 @@ class PrototypeTests(unittest.TestCase):
         self.assertEqual(request_body["generationConfig"]["maxOutputTokens"], 512)
         self.assertIn("responseSchema", request_body["generationConfig"])
         request_text = request.data.decode("utf-8")
+        prompt_text = request_body["contents"][0]["parts"][0]["text"]
         self.assertNotIn("support_values", request_text)
         self.assertNotIn("surprisingness_values", request_text)
         self.assertNotIn("private pattern", request_text)
         self.assertNotIn("private miner output", request_text)
         self.assertNotIn("private miner error", request_text)
+        self.assertIn("maximize pattern recall first", prompt_text)
+        self.assertIn('"depth": 0', prompt_text)
+        self.assertIn('"conj_exp": false', prompt_text)
         self.assertEqual(
             request.full_url,
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
@@ -235,6 +241,41 @@ class PrototypeTests(unittest.TestCase):
         self.assertNotIn("gemini-secret-test-key", metadata["error"])
         self.assertFalse(metadata["real_llm"])
 
+    def test_llm_candidates_include_pattern_count_without_raw_patterns(self):
+        response = io.BytesIO(json.dumps({
+            "candidates": [{
+                "content": {"parts": [{"text": json.dumps({"configurations": [{
+                    "min_support": 1,
+                    "depth": 0,
+                    "mode": "none",
+                    "normalization": "none",
+                    "db_ratio": "none",
+                    "conj_exp": False,
+                    "init_pattern": "$x",
+                }]})}]},
+            }],
+        }).encode())
+        previous = RunResult(
+            config={"min_support": 1, "depth": 0},
+            status="ok",
+            elapsed_seconds=1.0,
+            peak_memory_mb=1.0,
+            pattern_count=18,
+            support_values=[1.0],
+            surprisingness_values=[],
+            stdout="raw output",
+            stderr="",
+            patterns=["private pattern"],
+        )
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "gemini-test-key"}, clear=True), \
+                patch("prototype.urllib.request.urlopen", return_value=response) as urlopen:
+            llm_candidates(analyze_dataset(DATASET), [previous], 1)
+
+        request_body = json.loads(urlopen.call_args.args[0].data)
+        prompt_text = request_body["contents"][0]["parts"][0]["text"]
+        self.assertIn('"pattern_count": 18', prompt_text)
+        self.assertNotIn("private pattern", prompt_text)
+
     # PeTTa script generation, execution, timeout, and selection tests.
     def test_generated_script_uses_actual_nine_argument_signature(self):
         script = make_script(REPO, DATASET, Config(3, 1, conj_exp=True))
@@ -265,6 +306,45 @@ class PrototypeTests(unittest.TestCase):
             self.assertEqual(result.pattern_count, 2)
             self.assertEqual(result.support_values, [4.0, 2.0])
             self.assertIsNotNone(select_best([result], None, 1))
+
+    def test_llm_promotion_requires_same_recall_and_lower_runtime(self):
+        baseline = RunResult(
+            config={"min_support": 1, "depth": 0},
+            status="ok",
+            elapsed_seconds=2.0,
+            peak_memory_mb=1.0,
+            pattern_count=18,
+            support_values=[],
+            surprisingness_values=[],
+            stdout="",
+            stderr="",
+        )
+        faster = RunResult(
+            config={"min_support": 1, "depth": 0},
+            status="ok",
+            elapsed_seconds=1.5,
+            peak_memory_mb=1.0,
+            pattern_count=18,
+            support_values=[],
+            surprisingness_values=[],
+            stdout="",
+            stderr="",
+        )
+        slower = RunResult(**{**faster.__dict__, "elapsed_seconds": 2.0})
+        self.assertTrue(strictly_better_than_baseline(faster, baseline, 1.0))
+        self.assertFalse(strictly_better_than_baseline(slower, baseline, 1.0))
+        self.assertFalse(strictly_better_than_baseline(faster, baseline, 0.9))
+
+    def test_llm_mining_enhancement_requires_more_patterns_and_recall(self):
+        baseline = RunResult(
+            config={"min_support": 3, "depth": 0}, status="ok",
+            elapsed_seconds=2.0, peak_memory_mb=1.0, pattern_count=2,
+            support_values=[], surprisingness_values=[], stdout="", stderr="",
+        )
+        enhanced = RunResult(**{**baseline.__dict__, "pattern_count": 18})
+        self.assertTrue(enhances_mining_over_baseline(enhanced, baseline, 1.0))
+        self.assertFalse(enhances_mining_over_baseline(baseline, baseline, 1.0))
+        self.assertFalse(enhances_mining_over_baseline(enhanced, baseline, 0.0, 1.0))
 
     def test_timeout_is_serializable(self):
         with tempfile.TemporaryDirectory() as directory:

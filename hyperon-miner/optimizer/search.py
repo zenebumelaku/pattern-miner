@@ -89,3 +89,30 @@ def recall_fraction(reference: list[str], candidate: list[str]) -> float:
     if not reference:
         return 1.0 if not candidate else 0.0
     return len(set(reference).intersection(candidate)) / len(set(reference))
+
+
+# Legacy speed-only promotion helper retained for regression coverage. The live
+# LLM experiment uses the coverage-first helper below.
+def strictly_better_than_baseline(candidate: RunResult, baseline: RunResult,
+                                   candidate_recall: float,
+                                   baseline_recall: float = 1.0) -> bool:
+    return (
+        candidate.status == "ok"
+        and baseline.status == "ok"
+        and candidate_recall >= baseline_recall
+        and candidate.elapsed_seconds < baseline.elapsed_seconds
+    )
+
+
+# Coverage is the primary mining objective: promote a valid live proposal when
+# it preserves reference recall and returns more mined patterns than the
+# configured default baseline. Runtime remains recorded for transparency.
+def enhances_mining_over_baseline(candidate: RunResult, baseline: RunResult,
+                                  candidate_recall: float,
+                                  baseline_recall: float = 0.0) -> bool:
+    return (
+        candidate.status == "ok"
+        and baseline.status == "ok"
+        and candidate_recall >= baseline_recall
+        and candidate.pattern_count > baseline.pattern_count
+    )

@@ -1,0 +1,97 @@
+{
+  "artifact": "live-gemini-petta-rerun",
+  "dataset": "experiments/data/very-small-ugly.metta",
+  "provider": "gemini",
+  "model": "gemini-3.1-flash-lite",
+  "real_llm": true,
+  "fallback_count": 0,
+  "finish_reason": "STOP",
+  "prompt_tokens": 231,
+  "completion_tokens": 219,
+  "gemini_configurations": [
+    {
+      "min_support": 1,
+      "depth": 0,
+      "mode": "none",
+      "normalization": "none",
+      "db_ratio": "none",
+      "conj_exp": false,
+      "init_pattern": "$x"
+    },
+    {
+      "min_support": 1,
+      "depth": 1,
+      "mode": "none",
+      "normalization": "none",
+      "db_ratio": "none",
+      "conj_exp": true,
+      "init_pattern": "$x"
+    },
+    {
+      "min_support": 2,
+      "depth": 1,
+      "mode": "none",
+      "normalization": "none",
+      "db_ratio": "none",
+      "conj_exp": true,
+      "init_pattern": "$x"
+    }
+  ],
+  "default_baseline": {
+    "config": {
+      "min_support": 3,
+      "depth": 0,
+      "mode": "none",
+      "normalization": "none",
+      "db_ratio": "none",
+      "conj_exp": true,
+      "init_pattern": "$x"
+    },
+    "pattern_count": 2,
+    "runtimes_seconds": [14.11, 7.50, 12.04],
+    "median_runtime_seconds": 12.04,
+    "mean_runtime_seconds": 11.22,
+    "status": "ok"
+  },
+  "selected_live_proposal": {
+    "config": {
+      "min_support": 1,
+      "depth": 0,
+      "mode": "none",
+      "normalization": "none",
+      "db_ratio": "none",
+      "conj_exp": false,
+      "init_pattern": "$x"
+    },
+    "pattern_count": 18,
+    "reference_recall": 1.0,
+    "runtimes_seconds": [13.09, 16.15, 8.33],
+    "median_runtime_seconds": 13.09,
+    "mean_runtime_seconds": 12.52,
+    "status": "ok"
+  },
+  "depth_one_proposals": [
+    {
+      "config": {"min_support": 1, "depth": 1, "conj_exp": true},
+      "pattern_count": 2,
+      "reference_recall": 0.0,
+      "runtime_seconds": 39.49,
+      "status": "ok"
+    },
+    {
+      "config": {"min_support": 2, "depth": 1, "conj_exp": true},
+      "pattern_count": 2,
+      "reference_recall": 0.0,
+      "runtime_seconds": 13.94,
+      "status": "ok"
+    }
+  ],
+  "enhancement": {
+    "pattern_count_gain": 16,
+    "pattern_count_multiplier": 9.0,
+    "coverage_gate_passed": true,
+    "runtime_is_secondary": true,
+    "runtime_delta_median_seconds": -1.05,
+    "runtime_delta_mean_seconds": -1.30
+  }
+}

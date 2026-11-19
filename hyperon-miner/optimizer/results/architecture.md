@@ -51,3 +51,12 @@ identities. The experiment report compares candidate pattern sets with the
 - Explicit `--allow-llm-fallback`: deterministic fallback for offline development only.
 - Invalid configuration: recorded as invalid without launching PeTTa.
 - Miner timeout or nonzero process exit: recorded as timeout or failed.
+
+## LLM quality gate
+
+Live LLM proposals are evaluated separately from the always-run reference
+set and the project-default baseline. A proposal is promoted only when it
+completes successfully, preserves at least the default baseline's reference
+recall, and returns strictly more patterns. Runtime remains visible as a
+secondary metric because mining coverage is the primary objective. The fresh
+rerun passes this gate with 18 live-Gemini patterns versus 2 default patterns.

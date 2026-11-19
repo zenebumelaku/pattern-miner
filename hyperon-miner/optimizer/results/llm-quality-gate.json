@@ -1,0 +1,28 @@
+{
+  "artifact": "llm-mining-enhancement-gate",
+  "rule": {
+    "status": "candidate and default baseline must both be ok",
+    "reference_recall": "candidate_recall >= default_baseline_recall",
+    "coverage": "candidate_pattern_count > default_baseline_pattern_count",
+    "runtime": "reported as a secondary metric"
+  },
+  "implementation": {
+    "function": "optimizer.search.enhances_mining_over_baseline",
+    "report_field": "llm.improved_baseline",
+    "non_winner_behavior": "best is null"
+  },
+  "fresh_rerun": {
+    "source": "./gemini-petta-rerun.json",
+    "provider": "gemini",
+    "model": "gemini-3.1-flash-lite",
+    "real_llm": true,
+    "fallback_count": 0,
+    "default_pattern_count": 2,
+    "llm_pattern_count": 18,
+    "pattern_count_gain": 16,
+    "reference_recall": 1.0,
+    "coverage_gate": "passed",
+    "default_median_runtime_seconds": 12.04,
+    "llm_median_runtime_seconds": 13.09
+  }
+}

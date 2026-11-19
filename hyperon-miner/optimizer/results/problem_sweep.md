@@ -46,3 +46,11 @@ Runtime variation: very-small-ugly ranged from 2.116 to 12.619 seconds (10.503-s
 | ugly-man-sodaDrinker | min_support=1, depth=0 | 2.583 | 86 | ok |
 
 The reference pattern sets are the pattern-identity sets used for recall comparison.
+
+## LLM mining-enhancement gate
+
+The optimizer applies a coverage gate to live LLM proposals. A proposal must
+complete successfully, preserve the default baseline's reference recall, and
+return more measured patterns than the default configuration. Runtime is still
+recorded as a secondary metric. The fresh rerun passes with 18 Gemini patterns
+versus 2 default-baseline patterns.

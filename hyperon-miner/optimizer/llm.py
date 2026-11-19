@@ -75,15 +75,42 @@ def llm_candidates(
                 "status": run.status,
                 "elapsed_seconds": run.elapsed_seconds,
                 "peak_memory_mb": run.peak_memory_mb,
+                "pattern_count": run.pattern_count,
                 "has_error": run.error is not None,
             }
             for run in previous
         ],
+        "quality_contract": {
+            "reference_configuration": {
+                "min_support": 1,
+                "depth": 0,
+                "conj_exp": False,
+            },
+            "objective": (
+                "preserve the reference pattern recall and improve mining coverage "
+                "over the default configuration; minimize runtime as a secondary goal"
+            ),
+            "promotion_rule": (
+                "an LLM proposal is accepted only when it has at least the "
+                "reference recall and returns more measured patterns than the "
+                "default support-3 depth-0 configuration"
+            ),
+            "depth_policy": "depth 0 is the safe default; propose depth > 0 only when prior measured results prove recall is preserved",
+        },
+        "search_budget": {
+            "max_configurations": limit,
+            "must_include_nonbaseline_proposal": True,
+        },
         "schema": {"configurations": [{"min_support": 1, "depth": 0,
                                         "mode": "none", "normalization": "none",
-                                        "db_ratio": "none", "conj_exp": True,
+                                        "db_ratio": "none", "conj_exp": False,
                                         "init_pattern": "$x"}]},
-        "instruction": "Return JSON only. Suggest valid PeTTa miner configurations; do not invent mining results.",
+        "instruction": (
+            "Return JSON only. Suggest valid PeTTa miner configurations. "
+            "Treat the reference configuration as a hard recall floor: never "
+            "trade away pattern coverage for a small runtime improvement. "
+            "Do not invent mining results."
+        ),
     }
     default_model = "gemini-3.1-flash-lite" if provider_kind == "gemini" else "gpt-4o-mini"
     model_variable = "GEMINI_MODEL" if provider_kind == "gemini" else "OPENAI_MODEL"

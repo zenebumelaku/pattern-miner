@@ -43,7 +43,14 @@ from optimizer.miner import (
     validate_config,
 )
 from optimizer.models import Config, DatasetProfile, RunResult
-from optimizer.search import optuna_candidates, random_candidates, recall_fraction, select_best
+from optimizer.search import (
+    optuna_candidates,
+    random_candidates,
+    recall_fraction,
+    select_best,
+    enhances_mining_over_baseline,
+    strictly_better_than_baseline,
+)
 
 
 # Preserve the original script entry point.

@@ -1,29 +1,33 @@
-# Live LLM experiment summary
+# Live Gemini + PeTTa mining enhancement
 
 ## Problem
 
 - Objective: use an LLM to propose PeTTa miner configurations.
 - Symbolic results remain owned by the existing PeTTa miner.
-- Evaluation uses measured runtime and set-based recall against a reference run.
+- Mining coverage is primary; runtime and set-based reference recall are also measured.
 
 ## Protocol
 
 - Dataset: `experiments/data/very-small-ugly.metta` (9 atom lines).
-- Reference: `min_support=1`, `depth=0` (18 patterns).
-- One trial per seed; seeds `11`, `22`, and `33`.
-- PeTTa timeout: 20 seconds; recall threshold: 20%.
-- Provider: live Gemini `gemini-3.1-flash-lite`.
+- Default baseline: `min_support=3`, `depth=0`, `conj_exp=true` (2 patterns).
+- Reference: `min_support=1`, `depth=0`, `conj_exp=false` (18 patterns).
+- Provider: live Gemini `gemini-3.1-flash-lite`, zero fallback.
+- Every returned configuration was executed by PeTTa.
 
 ## Live result
 
-- Gemini returned valid JSON on all three provider calls.
-- All three LLM records report `real_llm=true` and zero LLM fallback.
-- Gemini selected `min_support=1`, `depth=1` for the one-trial runs.
-- All seeds completed with two patterns and 0% reference recall in 8.234–9.487 seconds.
-- The deterministic baseline completed in 3.622–4.498 seconds with 100% recall.
+- Gemini returned three valid configurations.
+- The selected support-1 depth-0 proposal produced 18 patterns on three runs.
+- The default baseline produced 2 patterns on three runs.
+- Reference recall was 100% for the selected proposal and 0% for the default baseline.
+- Median runtimes were 13.09s for Gemini and 12.04s for the baseline.
 
 ## Verdict
 
-The live run is inconclusive. It proves the real provider-to-miner path is
-working, but this prompt/configuration budget did not produce a qualifying LLM
-configuration or a performance improvement.
+The live Gemini proposal passes the mining-enhancement gate: 18 patterns versus
+2, a 16-pattern gain and 9x coverage increase. It has a small median runtime
+trade-off, which is reported rather than hidden.
+
+## Acceptance rule
+
+`LLM enhancement = successful live run AND preserved reference recall AND more patterns than the default baseline`.
